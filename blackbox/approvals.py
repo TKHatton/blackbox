@@ -90,6 +90,7 @@ def _mark_gate_approved(
         ),
         case_id=case_id,
         caused_by=recorder.current_cause,
+        content=updated.content,
     )
 
 

@@ -224,8 +224,20 @@ class WikiStore:
         except Exception:  # pragma: no cover
             logger.exception("Could not record a region listing withholding")
 
-    def record_update(self, update: WikiUpdate, case_id: str, caused_by: Optional[str] = None) -> str:
+    def record_update(
+        self,
+        update: WikiUpdate,
+        case_id: str,
+        caused_by: Optional[str] = None,
+        content: Optional[dict] = None,
+    ) -> str:
         """Record a Wiki page rewrite in the Diary.
+
+        The resulting page content is recorded alongside the version bookkeeping.
+        That is what lets the Time Machine rebuild the Wiki as it stood at a past
+        moment instead of reading today's pages, and a replay that read current
+        state would produce confident nonsense. An earlier version of this method
+        recorded only the version numbers, which made the Wiki unreconstructable.
 
         Args:
             update: What changed about the page.
@@ -233,21 +245,24 @@ class WikiStore:
                 part of a case's story, so they go in that case's log rather than
                 a separate one.
             caused_by: The event that caused the rewrite.
+            content: The page content after the rewrite.
 
         Returns:
             The event id of the recorded MEMORY_WRITE.
         """
+        payload_content = dict(content) if content else {}
+        payload_content["_version"] = {
+            "old_version": update.old_version,
+            "new_version": update.new_version,
+            "old_derived_from": update.old_derived_from,
+            "new_derived_from": update.new_derived_from,
+        }
         return self._event_store.append_event(
             case_id=case_id,
             event_type=EventType.MEMORY_WRITE,
             payload={
                 "memory_key": f"wiki:{update.page_id}",
-                "content": {
-                    "old_version": update.old_version,
-                    "new_version": update.new_version,
-                    "old_derived_from": update.old_derived_from,
-                    "new_derived_from": update.new_derived_from,
-                },
+                "content": payload_content,
                 "reason": update.reason,
             },
             actor="wiki_store",

@@ -17,16 +17,31 @@ from typing import Any, Dict, Optional
 from .. import wake
 from ..gateway import Destination, DisclosureRequest, check_disclosure
 from ..labels import Label, Provenance, Sensitivity
+from ..policy import PolicyError, get_policy_engine
 from ..propagation import label_assessment
 from ..stubs.systems import SourceSystemError
 from ..wiki import WikiPage, WikiUpdate
 from .runtime import current_run
 
-# Gate A. Any remedy above this needs an adjudicator's sign-off. Stored here as a
-# constant for Phase 3; Phase 6 moves it into policy-as-data so the Time Machine
-# can replay a case with a different threshold.
-GATE_A_THRESHOLD = 500.0
+def gate_a_threshold() -> float:
+    """The remedy value above which an adjudicator must sign off.
 
+    Read from the active policy set rather than held as a module constant, which
+    is what lets the Time Machine replay a case under a different threshold
+    without editing this file. The name is kept as a function so no caller can
+    capture the value at import time and miss a policy change.
+    """
+    return float(get_policy_engine().constant("gate_a_threshold", 500.0))
+
+
+def appeal_window_days() -> int:
+    """How long a case sleeps after the final response."""
+    return int(get_policy_engine().constant("appeal_window_days", 30))
+
+
+#: Kept so existing callers and tests keep working. Prefer the functions above:
+#: this is evaluated once at import and will not follow a policy change.
+GATE_A_THRESHOLD = 500.0
 APPEAL_WINDOW_DAYS = 30
 
 
@@ -106,6 +121,7 @@ def _rewrite_case_file(updates: Dict[str, Any], reason: str) -> Dict[str, Any]:
         ),
         case_id=run.recorder.case_id,
         caused_by=run.recorder.current_cause,
+        content=page.content,
     )
     return {"page_id": page_id, "version": new_version, "content": page.content}
 
@@ -284,26 +300,54 @@ def record_assessment(
     """
     run = current_run()
 
-    gate_a = remedy_amount > GATE_A_THRESHOLD
-    gate_b = looks_systemic
+    # The gates are policy, not code. Which threshold applied is recorded with
+    # the decision, so a case can later be replayed against a different one and
+    # the difference attributed to the policy rather than to the agent.
+    engine = run.policy_engine or get_policy_engine()
+    threshold = float(engine.constant("gate_a_threshold", 500.0))
+    context = {"remedy_amount": remedy_amount, "looks_systemic": looks_systemic}
+
+    try:
+        gate_a_result = engine.evaluate("gate_a_monetary_threshold", context)
+        gate_b_result = engine.evaluate("gate_b_systemic_flag", context)
+    except PolicyError as exc:
+        # A gate that cannot be evaluated escalates. An approval gate that
+        # silently fails open is the worst kind of governance defect.
+        run.recorder.policy_check(
+            policy_id="gate_evaluation_failed",
+            check_type="approval_threshold",
+            input_data=context,
+            decision="escalate",
+            reasoning=(
+                f"An approval gate could not be evaluated, so the case is being "
+                f"escalated rather than allowed to proceed: {exc}"
+            ),
+        )
+        return {"error": f"Approval gates could not be evaluated: {exc}", "status": "ESCALATED"}
+
+    gate_a = gate_a_result.fired
+    gate_b = gate_b_result.fired
 
     run.recorder.policy_check(
         policy_id="gate_a_monetary_threshold",
         check_type="approval_threshold",
-        input_data={"remedy_amount": remedy_amount, "threshold": GATE_A_THRESHOLD},
+        input_data={
+            "remedy_amount": remedy_amount,
+            "threshold": threshold,
+            "policy_version": engine.policies.version,
+        },
         decision="escalate" if gate_a else "allow",
         reasoning=(
-            f"Proposed remedy of {remedy_amount} is above the {GATE_A_THRESHOLD} "
-            f"adjudicator threshold, so it needs sign-off."
+            gate_a_result.reason
             if gate_a
-            else f"Proposed remedy of {remedy_amount} is at or below the "
-            f"{GATE_A_THRESHOLD} threshold, so no adjudicator sign-off is required."
+            else f"Proposed remedy of {remedy_amount} is at or below the {threshold} "
+            f"threshold, so no adjudicator sign-off is required."
         ),
     )
     run.recorder.policy_check(
         policy_id="gate_b_systemic_flag",
         check_type="approval_threshold",
-        input_data={"looks_systemic": looks_systemic},
+        input_data={"looks_systemic": looks_systemic, "policy_version": engine.policies.version},
         decision="escalate" if gate_b else "allow",
         reasoning=systemic_reasoning,
     )
@@ -543,6 +587,7 @@ async def send_customer_letter(letter_type: str, body: str, purpose: str) -> Dic
         ),
         recorder=run.recorder,
         model=run.judge_model,
+        engine=run.policy_engine,
     )
 
     if not verdict.allowed:
@@ -570,7 +615,7 @@ async def send_customer_letter(letter_type: str, body: str, purpose: str) -> Dic
 
     updates: Dict[str, Any] = {f"{letter_type}_sent_at": datetime.now(timezone.utc).isoformat()}
     if letter_type == "final_response":
-        window_closes = datetime.now(timezone.utc) + timedelta(days=APPEAL_WINDOW_DAYS)
+        window_closes = datetime.now(timezone.utc) + timedelta(days=appeal_window_days())
         updates.update(
             {
                 "status": "awaiting_appeal_window",
@@ -593,11 +638,12 @@ def suspend_for_appeal_window() -> Dict[str, Any]:
         Confirmation that the case is asleep and when it will wake.
     """
     run = current_run()
-    closes_at = datetime.now(timezone.utc) + timedelta(days=APPEAL_WINDOW_DAYS)
+    window_days = appeal_window_days()
+    closes_at = datetime.now(timezone.utc) + timedelta(days=window_days)
     condition = wake.appeal_window_condition(
         resume_agent="compliance_officer",
         window_closes_at=closes_at,
-        description=f"The {APPEAL_WINDOW_DAYS} day appeal window closes",
+        description=f"The {window_days} day appeal window closes",
     )
     event_id = run.recorder.suspend(
         reason="Final response sent. Sleeping through the appeal window.",
@@ -746,6 +792,7 @@ async def file_with_regulator(jurisdiction: str, summary: str) -> Dict[str, Any]
         ),
         recorder=run.recorder,
         model=run.judge_model,
+        engine=run.policy_engine,
     )
 
     if not verdict.allowed:

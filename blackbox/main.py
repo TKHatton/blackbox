@@ -29,7 +29,10 @@ from .fold import fold_events
 from .heartbeat import run_heartbeat
 from .opentelemetry_setup import configure_tracing
 from .eraser import Retraction, retract, retraction_history
+from .policy import DEFAULT_POLICIES, get_policy_engine
 from .recorder import Recorder
+from .replay import ReplayMode, replay_case
+from .timemachine import state_as_of
 from .regions import RegionRoutingRefused, evaluate_routing
 from .stubs import data
 from .stubs.systems import SourceSystemError, get_source_systems
@@ -76,8 +79,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="BLACKBOX",
-    description="The flight recorder for AI agents. Phase 5: The Eraser.",
-    version="0.5.0",
+    description="The flight recorder for AI agents. Phase 6: The Time Machine.",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
@@ -88,11 +91,12 @@ def healthz() -> Dict[str, Any]:
     settings = get_settings()
     return {
         "status": "ok",
-        "phase": "5",
+        "phase": "6",
         "project_id": settings.project_id or None,
         "firestore_database": settings.firestore_database,
         "gemini_model": settings.gemini_model,
         "worker_region": settings.worker_region,
+        "policy_version": get_policy_engine().policies.version,
         "trace_exporter": settings.trace_exporter,
         "in_memory": settings.in_memory,
     }
@@ -368,6 +372,75 @@ def list_retractions() -> Dict[str, Any]:
     somebody withdrew it, which is what an auditor asks for.
     """
     return {"retractions": retraction_history(get_store())}
+
+
+@app.get("/policies")
+def get_policies() -> Dict[str, Any]:
+    """The rules the fleet is running under, as data.
+
+    Governance rules live here rather than compiled into the agents, which is
+    what makes a replay under an altered rule possible at all.
+    """
+    return get_policy_engine().policies.to_dict()
+
+
+@app.get("/cases/{case_id}/as-of/{event_id}")
+def get_state_as_of(case_id: str, event_id: str) -> Dict[str, Any]:
+    """The world as it stood immediately after an event.
+
+    Rebuilt from the log, not read from current state. This is the ground a
+    replay stands on, so it is worth being able to look at directly.
+    """
+    try:
+        world = state_as_of(get_store(), case_id, event_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "case_id": world.case_id,
+        "rewind_to": world.rewind_to,
+        "rewind_at": world.rewind_at.isoformat() if world.rewind_at else None,
+        "events_in_window": len(world.events),
+        "status_at_that_point": world.state.current_status,
+        "wiki_as_it_stood": world.wiki_pages,
+    }
+
+
+@app.post("/replay")
+async def run_replay(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    """Rewind a case, alter a rule, and report what would have happened instead.
+
+    The replay reads recorded tool responses and never touches a live system. A
+    missing recording stops it rather than falling through to a real call.
+
+    Body: case_id, rewind_to, and either constants (a mapping of policy constants
+    to override) or nothing for a control run. mode is "fast" or "fresh".
+    """
+    case_id = request.get("case_id")
+    rewind_to = request.get("rewind_to")
+    if not case_id or not rewind_to:
+        raise HTTPException(status_code=400, detail="case_id and rewind_to are required")
+
+    overrides = request.get("constants") or {}
+    policies = DEFAULT_POLICIES.with_constants(**overrides) if overrides else DEFAULT_POLICIES
+
+    try:
+        mode = ReplayMode(request.get("mode", "fast"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Unknown replay mode: {exc}") from exc
+
+    try:
+        result = await replay_case(
+            store=get_store(),
+            case_id=case_id,
+            rewind_to=rewind_to,
+            policies=policies,
+            mode=mode,
+            original_policy_version=DEFAULT_POLICIES.version,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return result.to_dict()
 
 
 @app.get("/regions/check")

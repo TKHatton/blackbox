@@ -41,6 +41,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from .labels import Label, Sensitivity
+from .policy import PolicyEngine, PolicyError, get_policy_engine
 
 logger = logging.getLogger(__name__)
 
@@ -144,104 +145,27 @@ class GatewayVerdict:
 # ----------------------------------------------------------------------
 
 
-def _rule_third_party_pii(request: DisclosureRequest) -> Optional[GatewayVerdict]:
-    """Another customer's name is not the complainant's to receive."""
-    if request.destination != Destination.CUSTOMER:
-        return None
-    if not request.label.has(Sensitivity.THIRD_PARTY_PII):
-        return None
-    return GatewayVerdict(
-        Decision.BLOCK,
-        "third_party_pii_not_to_complainant",
-        "This content is derived from a transaction record naming someone who is "
-        "not the complainant. The bank has no right to disclose that person's "
-        f"details to them. Sources: {_origins_summary(request.label)}.",
-    )
+def build_policy_context(request: DisclosureRequest) -> Dict[str, Any]:
+    """Turn a disclosure request into the facts the rules read.
 
-
-def _rule_pii_high(request: DisclosureRequest) -> Optional[GatewayVerdict]:
-    """National identifiers do not leave the bank."""
-    if request.destination == Destination.INTERNAL:
-        return None
-    if not request.label.has(Sensitivity.PII_HIGH):
-        return None
-    return GatewayVerdict(
-        Decision.BLOCK,
-        "pii_high_never_leaves_the_bank",
-        "This content is derived from a national identifier, which does not leave "
-        f"the bank's systems under any basis. Sources: {_origins_summary(request.label)}.",
-    )
-
-
-def _rule_cross_border_special_category(
-    request: DisclosureRequest,
-) -> Optional[GatewayVerdict]:
-    """The headline rule: special category data, restricted origin, third country.
-
-    Four conditions have to hold at once, and the interesting one is the first.
-    The content need not mention health. It only has to *descend* from something
-    that did.
+    The rules never see the content. They see what it is derived from, which is
+    why identical wording can be allowed in one case and refused in another, and
+    why no regex can do this job.
     """
-    if not request.label.has(Sensitivity.SPECIAL_CATEGORY):
-        return None
+    return {
+        "has_pii_high": request.label.has(Sensitivity.PII_HIGH),
+        "has_special_category": request.label.has(Sensitivity.SPECIAL_CATEGORY),
+        "has_third_party_pii": request.label.has(Sensitivity.THIRD_PARTY_PII),
+        "has_internal_only": request.label.has(Sensitivity.INTERNAL_ONLY),
+        "jurisdictions": sorted(request.label.jurisdictions),
+        "destination": request.destination.value,
+        "destination_region": request.destination_region,
+        "destination_system": request.destination_system,
+        "has_adequacy_basis": bool(request.adequacy_basis),
+        "adequacy_basis": request.adequacy_basis or "",
+        "origins": _origins_summary(request.label),
+    }
 
-    restricted = request.label.jurisdictions & RESTRICTED_TRANSFER_JURISDICTIONS
-    if not restricted:
-        return None
-
-    region = request.destination_region
-    if region in ADEQUATE_REGIONS:
-        return None
-
-    if request.adequacy_basis:
-        # The transfer is still restricted. It is now also documented, which is
-        # what the rule was asking for. Recorded as an allow with the basis
-        # named, so an auditor sees the decision and who stands behind it.
-        return GatewayVerdict(
-            Decision.ALLOW,
-            "special_category_transfer_with_adequacy_basis",
-            f"Special category data originating in {', '.join(sorted(restricted))} is "
-            f"being transferred to {request.destination_system} in {region}, which is "
-            f"a third country. An adequacy basis is recorded for this transfer: "
-            f"{request.adequacy_basis}.",
-        )
-
-    return GatewayVerdict(
-        Decision.BLOCK,
-        "special_category_third_country_transfer",
-        f"Special category data originating in {', '.join(sorted(restricted))} would "
-        f"be transferred to {request.destination_system}, which operates in "
-        f"{region}. That is a third country with no adequacy basis recorded for "
-        f"this transfer. Note that the content itself contains no health "
-        f"vocabulary: it is restricted because of where it is derived from, not "
-        f"because of what it says. To proceed, a transfer basis has to be recorded "
-        f"against this case by someone willing to stand behind it. "
-        f"Sources: {_origins_summary(request.label)}.",
-    )
-
-
-#: Only the unambiguous cases are decided by rule. Each of these has a correct
-#: answer that does not depend on how the content is worded:
-#:
-#:   - a national identifier leaving the bank
-#:   - special category data from a restricted jurisdiction crossing to a third
-#:     country with no adequacy basis
-#:   - a third party's name going to the complainant
-#:
-#: INTERNAL_ONLY is deliberately *not* here. Every final response letter is
-#: derived from the assessment, so a rule that blocked on that derivation would
-#: block every letter the bank ever sends. Whether a letter conveys the outcome
-#: and its grounds, which the customer is entitled to, or repeats the internal
-#: file note, which they are not, is a judgment about the words. That goes to
-#: Gemini.
-#:
-#: Order affects only which reason is reported first. Every rule is evaluated, so
-#: content that trips three rules reports all three.
-_RULES = [
-    _rule_pii_high,
-    _rule_cross_border_special_category,
-    _rule_third_party_pii,
-]
 
 
 def _origins_summary(label: Label) -> str:
@@ -251,29 +175,75 @@ def _origins_summary(label: Label) -> str:
     return "; ".join(sorted(o.describe() for o in label.origins))
 
 
-def apply_rules(request: DisclosureRequest) -> Optional[GatewayVerdict]:
-    """Run every deterministic rule. Returns the first block, or None."""
-    verdicts = [rule(request) for rule in _RULES]
-    fired = [v for v in verdicts if v is not None]
+def apply_rules(
+    request: DisclosureRequest, engine: Optional[PolicyEngine] = None
+) -> Optional[GatewayVerdict]:
+    """Evaluate the disclosure rules in the active policy set.
+
+    Only the unambiguous cases are decided by rule. Each has a correct answer that
+    does not depend on how the content is worded: a national identifier leaving
+    the bank, special category data crossing to a third country with no recorded
+    basis, and a third party's name going to the complainant.
+
+    INTERNAL_ONLY is deliberately not among them. Every final response letter is
+    derived from the assessment, so a rule blocking on that derivation would block
+    every letter the bank sends. Whether a letter conveys the outcome, which the
+    customer is entitled to, or repeats the internal file note, which they are
+    not, is a judgment about the words. That goes to Gemini.
+
+    Args:
+        request: What is being sent, where, and what it is derived from.
+        engine: The policy engine to evaluate against. Defaults to the active
+            one. A replay passes its own, which is what makes the Time Machine
+            possible without editing and redeploying an agent.
+
+    Returns:
+        A blocking verdict, a clearing verdict, or None when no rule fires.
+
+    Raises:
+        PolicyError: If a rule cannot be evaluated. Callers on the outbound path
+            treat that as a block.
+    """
+    engine = engine or get_policy_engine()
+    context = build_policy_context(request)
+    fired = [r for r in engine.evaluate_category("disclosure", context) if r.fired]
     if not fired:
         return None
 
-    # A rule can also clear a transfer, by naming the basis that permits it. Any
+    blocks = [r for r in fired if r.rule.effect == "block"]
+
+    # A rule can also clear a transfer by naming the basis that permits it. Any
     # block outranks any allow: one rule permitting a transfer says nothing about
     # a different rule forbidding it for an unrelated reason.
-    blocks = [v for v in fired if v.decision == Decision.BLOCK]
     if not blocks:
         cleared = fired[0]
-        cleared.considered = [v.rule_id for v in fired]
-        return cleared
+        return GatewayVerdict(
+            Decision.ALLOW,
+            cleared.rule_id,
+            cleared.reason,
+            considered=[r.rule_id for r in fired],
+        )
 
-    fired = blocks
-    first = fired[0]
-    first.considered = [v.rule_id for v in fired]
-    if len(fired) > 1:
-        others = "; ".join(v.reasoning for v in fired[1:])
-        first.reasoning = f"{first.reasoning} Additional grounds: {others}"
-    return first
+    first = blocks[0]
+    reasoning = first.reason
+    if len(blocks) > 1:
+        reasoning += " Additional grounds: " + "; ".join(b.reason for b in blocks[1:])
+    if first.rule_id == "special_category_third_country_transfer":
+        reasoning += (
+            " Note that the content itself contains no health vocabulary: it is "
+            "restricted because of where it is derived from, not because of what it "
+            "says. To proceed, a transfer basis has to be recorded against this case "
+            "by someone willing to stand behind it."
+        )
+    reasoning += f" Sources: {context['origins']}."
+
+    return GatewayVerdict(
+        Decision.BLOCK,
+        first.rule_id,
+        reasoning,
+        considered=[r.rule_id for r in fired],
+    )
+
 
 
 # ----------------------------------------------------------------------
@@ -418,6 +388,7 @@ async def check_disclosure(
     recorder: Any,
     model: Optional[Any] = None,
     use_judge: bool = True,
+    engine: Optional[PolicyEngine] = None,
 ) -> GatewayVerdict:
     """Decide whether something may leave, and record the decision either way.
 
@@ -436,7 +407,17 @@ async def check_disclosure(
     Returns:
         The verdict. Callers must not send when ``allowed`` is false.
     """
-    verdict = apply_rules(request)
+    try:
+        verdict = apply_rules(request, engine=engine)
+    except PolicyError as exc:
+        # A rule that cannot be evaluated is not a rule that does not apply.
+        logger.error("Policy evaluation failed, blocking: %s", exc)
+        verdict = GatewayVerdict(
+            Decision.BLOCK,
+            "policy_evaluation_failed",
+            f"A governance rule could not be evaluated, so the disclosure was "
+            f"blocked rather than allowed by default: {exc}",
+        )
 
     if verdict is None:
         if request.label.is_public or not use_judge:

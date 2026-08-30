@@ -17,7 +17,8 @@ shaped it, and prove regulated data never reached where it should not.
 | 3. The fleet wakes itself up | Done. Six agents, suspend and resume, heartbeat. |
 | 4. Invisible Ink | Done. Label lattice, propagation, exit checks, taint path. |
 | 5. The Eraser | Done. Transitive cascade, regeneration, region pinning. |
-| 6. The Time Machine | Next. |
+| 6. The Time Machine | Done. Policies as data, replay, divergence. |
+| 7. The Stunt Double | Next. |
 
 ### A correction to the earlier Phase 1 claim
 
@@ -32,6 +33,67 @@ than to Cloud Trace.
 
 Phase 2 fixed all of that, because none of it could be built on otherwise. The
 Phase 2 suite exercises the write path end to end against a scripted model.
+
+## What Phase 6 built
+
+Rewind to any past moment, alter a rule, replay, and see what would have happened
+instead.
+
+**Policies are data now.** This is the refactor the spec warned would have to
+reach back into Phase 4, and it did. The gateway's rules were Python functions;
+they are now CEL expressions in a versioned policy set, evaluated against a
+context. The Gate A threshold is a number in that set rather than a constant in a
+module. Replaying a case under a $100 threshold means loading a policy set that
+says 100 and running exactly the same agent code, which is the only way a replay
+proves anything.
+
+A rule that will not compile, or that throws when evaluated, **raises**. It does
+not return false. False means "this restriction does not apply", and a broken
+rule quietly meaning that is how a governance system develops a hole nobody can
+see. The outbound path treats an unevaluable rule as a block.
+
+**A replay cannot touch a live system.** The spec calls this the most dangerous
+defect possible in this build, and the defence here is capability rather than
+discipline. A replay does not run against the live source systems with a flag
+set. It runs against `FixtureSystems`, a different class holding a dictionary,
+with no clients and no network code anywhere in it. There is nothing to disable
+because there is nothing there. Outbound systems raise on contact, and the
+attempt is reported because the attempt is the interesting part.
+
+**A fixture miss stops the replay.** It does not fall through, retry, or
+substitute a blank. A replay that guessed at a missing recording would produce a
+confident, wrong divergence report, and a report you cannot trust is worse than
+no report.
+
+**State as-of, not state now.** Rewind to day six of a case that has since closed
+and the naive implementation reads today's Wiki page, showing the agent the
+outcome it is supposed to be deciding. So the world is rebuilt from the log:
+event ids are ULIDs, so "everything at or before the rewind point" is a lexical
+comparison, and the Wiki is reconstructed by replaying its `MEMORY_WRITE` events.
+Those events now carry the resulting page content, which they did not before,
+because without it the Wiki could not be reconstructed at all.
+
+**Divergence is compared on decisions, not text.** Two runs that reached the same
+conclusions in different words have not diverged. Comparing payloads would report
+a difference on every changed timestamp and bury the decisions that matter. And
+the report carries the downstream consequences, not just the point of the split.
+
+### Seeing it
+
+```bash
+BLACKBOX_IN_MEMORY=1 python demo_time_machine.py
+```
+
+Three closed cases, worked under the $500 threshold. Drop it to $100 and replay.
+The $617 case still escalates, the $82 case still sails through, and the $300
+case changes from going straight through to waiting on an adjudicator. That is a
+case which now waits one to four days it did not wait before, against an eight
+week statutory deadline: the consequence a bank would want to see before shipping
+the rule.
+
+The demo also shows the replay refusing to send a letter, refusing to answer an
+unrecorded call, and leaving the Diary at exactly the event count it started
+with. A replay is a question about the past, not an addition to it.
 
 ## What Phase 5 built
 
@@ -264,6 +326,10 @@ blackbox/
   wiki.py              Wiki page schema, with derived_from
   wiki_store.py        Wiki storage. Rewrites in place, records each rewrite
   tiering.py           Three shelves. Still a stub, see below
+  policy.py            Governance rules as CEL expressions, not code
+  timemachine.py       State as-of, and the fixtures a replay may see
+  divergence.py        Recorded model turns, and comparing two runs
+  replay.py            Fast and fresh replay, and the divergence report
   labels.py            The label lattice and the combination rule
   eraser.py            Retraction, the transitive cascade, regeneration
   regions.py           Region pinning, enforced in the Wiki read path
@@ -297,11 +363,13 @@ tests/
   test_phase3.py       Suspend, resume, wake decisions, routing, gates
   test_phase4.py       The lattice, propagation, the gateway, the taint path
   test_phase5.py       Cascade transitivity, regeneration, region pinning
+  test_phase6.py       Policies as data, state as-of, fixtures, divergence
   conftest.py          In-memory fixtures, so the suite needs no credentials
   fakes.py             A scripted stand-in for Gemini, tests only
 demo_lifecycle.py      One complaint, start to finish, with time compressed
 demo_invisible_ink.py  The four-hop block, and why no filter could catch it
 demo_eraser.py         One retraction, six derived pages, and a refused border
+demo_time_machine.py   Tighten a threshold, replay, see which cases change
 ```
 
 ## Running it locally
@@ -318,7 +386,7 @@ against the in-memory backend with a scripted model.
 .venv/Scripts/python -m pytest -q
 ```
 
-142 tests, all passing.
+171 tests, all passing.
 
 To run the service locally against the in-memory store:
 
@@ -347,6 +415,9 @@ See `DEPLOY.md`. Short version: fill in `.env`, then `bash deploy.sh`.
 | `GET /taint/{event_id}` | The chain from a blocked action back to its source |
 | `GET /retractions` | Every retraction performed, after the content is gone |
 | `GET /regions/check` | Whether this instance may read a given jurisdiction |
+| `GET /policies` | The rules the fleet is running under, as data |
+| `GET /cases/{id}/as-of/{event_id}` | The world as it stood at a past moment |
+| `POST /replay` | Rewind, alter a rule, and report what would have differed |
 | `GET /wiki/{page_id}` | What agents read during normal operation |
 | `GET /stubs/...` | The source systems, for inspection |
 
@@ -364,6 +435,8 @@ None of them is meant for a person.
 ## Hard constraints, and where they are held
 
 - **Gemini only.** The model id lives in one place, `config.gemini_model`.
+  `RecordedLlm` replays turns a Gemini call already produced; it infers nothing
+  of its own.
   Nothing else in the codebase names a model. `tests/fakes.py` scripts a stand-in
   for tests and is never imported by shipped code.
 - **Google ADK.** The agent is an `LlmAgent`, run by ADK's `Runner`. A test

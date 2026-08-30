@@ -50,6 +50,10 @@ class AgentRun:
     #: Model the disclosure judge uses. None means the configured Gemini model.
     #: Tests set this so a gateway decision needs no network call.
     judge_model: Optional[Any] = None
+    #: The policy engine this run evaluates governance rules against. None
+    #: means the live one. A replay supplies its own, which is the whole
+    #: mechanism behind the Time Machine.
+    policy_engine: Optional[Any] = None
 
     def absorb(self, label: Label) -> Label:
         """Join a new label into what this run carries. Returns the new total."""
@@ -80,6 +84,7 @@ def agent_run(
     systems: Optional[SourceSystems] = None,
     wiki_store: Optional[WikiStore] = None,
     judge_model: Optional[Any] = None,
+    policy_engine: Optional[Any] = None,
 ) -> Iterator[AgentRun]:
     """Make a run current for the duration of the block."""
     run = AgentRun(
@@ -87,6 +92,7 @@ def agent_run(
         systems=systems or get_source_systems(),
         wiki_store=wiki_store,
         judge_model=judge_model,
+        policy_engine=policy_engine,
     )
     token = _CURRENT_RUN.set(run)
     try:

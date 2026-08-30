@@ -247,12 +247,37 @@ To retract a customer record and watch the cascade:
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"subject":"CUST-4471","fields":["name","address"],"reason":"right to erasure","requested_by":"customer"}'   https://YOUR-SERVICE-URL/retractions
 ```
 
+## Replaying a case under a different rule
+
+The rules the fleet runs under are data, and readable:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://YOUR-SERVICE-URL/policies
+```
+
+Pick a case and a point to rewind to. Any event id from the case's trace works;
+one just before the assessment is the interesting one:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://YOUR-SERVICE-URL/cases/CASE-CMP-2026-0841/trace
+```
+
+Then replay it under a tighter threshold:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"case_id":"CASE-CMP-2026-0841","rewind_to":"EVENT_ID","constants":{"gate_a_threshold":100}}'   https://YOUR-SERVICE-URL/replay
+```
+
+The response names the policy version it ran under, where the runs first differ,
+and every downstream decision that changed. A replay reads recorded tool
+responses only: it cannot reach CoreBank, and a missing recording stops it rather
+than falling through to a live call.
+
 ## What is deliberately not here
 
 The tiering job from Phase 1.5 is still a stub. It does not copy to BigQuery and
 it does not delete from Firestore, so Firestore will grow. That is fine at these
 volumes and needs fixing before the Filing Cabinet claim is true.
 
-The Time Machine is Phase 6. Governance rules are still compiled into the
-agents rather than stored as evaluable expressions, so nothing can yet be
-replayed under an altered policy.
+The Stunt Double is Phase 7. Nothing yet runs a candidate agent version in
+shadow against live traffic.

@@ -31,6 +31,7 @@ from .agents.fleet_service import advance_case, resume_case
 from .config import get_settings
 from .event_store import EventStore
 from .fold import fold_events
+from .policy import PolicyEngine, PolicyError, get_policy_engine
 from .recorder import Recorder
 from .schema import EventType
 from .stubs.systems import SourceSystemError, SourceSystems
@@ -44,9 +45,8 @@ from .wiki_store import WikiStore
 
 logger = logging.getLogger(__name__)
 
-# How close to a statutory deadline a case has to be before the Compliance
-# Officer is asked to look at it. Eight weeks is the final response deadline, so
-# two weeks out leaves room to act.
+#: Kept for callers that imported it. The value the fleet actually uses comes
+#: from the policy set, so a replay can tighten it without editing this file.
 COMPLIANCE_REVIEW_LEAD_DAYS = 14
 
 
@@ -163,7 +163,10 @@ def evaluate_wake_condition(
 
 
 def cases_needing_compliance_review(
-    store: EventStore, wiki_store: WikiStore, now: Optional[datetime] = None
+    store: EventStore,
+    wiki_store: WikiStore,
+    now: Optional[datetime] = None,
+    engine: Optional[PolicyEngine] = None,
 ) -> List[Dict[str, Any]]:
     """Open cases whose statutory clocks are close enough to need a look.
 
@@ -171,6 +174,7 @@ def cases_needing_compliance_review(
     about current state, and current state is what the Wiki holds.
     """
     now = now or datetime.now(timezone.utc)
+    engine = engine or get_policy_engine()
     due = []
 
     for page in wiki_store.list_pages_by_subject_type("case"):
@@ -188,20 +192,33 @@ def cases_needing_compliance_review(
             continue
 
         days_left = (deadline - now).total_seconds() / 86400
-        already_held = bool(content.get("holding_sent_at")) or content.get(
-            "holding_letter_required"
+        already_held = bool(content.get("holding_sent_at")) or bool(
+            content.get("holding_letter_required")
         )
         final_sent = bool(content.get("final_response_sent_at"))
 
-        if final_sent:
+        # Whether a case is close enough to need a look is policy, not arithmetic
+        # hidden in a comparison. A replay can tighten the lead time and see which
+        # cases would have been picked up earlier.
+        try:
+            result = engine.evaluate(
+                "compliance_review_due",
+                {
+                    "days_to_final_response": round(days_left, 2),
+                    "final_response_sent": final_sent,
+                    "holding_letter_sent": already_held,
+                },
+            )
+        except PolicyError:
+            logger.exception("Could not evaluate the compliance review rule for %s", page.subject)
             continue
-        if days_left <= COMPLIANCE_REVIEW_LEAD_DAYS and not already_held:
+
+        if result.fired:
             due.append(
                 {
                     "case_id": page.subject,
                     "days_to_final_response": round(days_left, 2),
-                    "reason": "Final response deadline is approaching and no holding "
-                    "letter has been sent.",
+                    "reason": result.reason,
                 }
             )
     return due
@@ -215,6 +232,7 @@ async def run_heartbeat(
     now: Optional[datetime] = None,
     resume_limit: int = 10,
     compliance_limit: int = 5,
+    engine: Optional[PolicyEngine] = None,
 ) -> Dict[str, Any]:
     """One beat. Evaluate every open suspension, resume what is ready.
 
@@ -288,7 +306,9 @@ async def run_heartbeat(
                 )
 
     reviews: List[Dict[str, Any]] = []
-    for item in cases_needing_compliance_review(store, wiki_store, now=now)[:compliance_limit]:
+    for item in cases_needing_compliance_review(
+        store, wiki_store, now=now, engine=engine
+    )[:compliance_limit]:
         try:
             outcome = await advance_case(
                 case_id=item["case_id"],

@@ -533,10 +533,18 @@ def test_gateway_is_not_a_keyword_filter():
     assert apply_rules(tainted) is not None
     assert apply_rules(clean) is None
 
-    # And the rule implementations never look at the words.
-    for rule in gateway._RULES:
-        source = inspect.getsource(rule)
-        assert "request.content" not in source, f"{rule.__name__} inspects the content"
+    # And the rules cannot look at the words even if someone wanted them to.
+    # Since Phase 6 the rules are CEL expressions evaluated against a context
+    # built by build_policy_context, and the content is not in that context.
+    from blackbox.gateway import build_policy_context
+    from blackbox.policy import DEFAULT_POLICIES
+
+    context = build_policy_context(tainted)
+    assert identical_text not in str(context), "the content reached the rule context"
+    assert "content" not in context
+
+    for rule in DEFAULT_POLICIES.rules_in("disclosure"):
+        assert "content" not in rule.expression, f"{rule.rule_id} reads the content"
 
 
 # ----------------------------------------------------------------------

@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="blackbox",
-    version="0.2.0",
+    version="0.6.0",
     packages=find_packages(exclude=["tests", "tests.*"]),
     python_requires=">=3.11",
     install_requires=[
@@ -18,5 +18,6 @@ setup(
         "pydantic>=2.0.0",
         "python-ulid>=1.1.0",
         "python-dotenv>=1.0.0",
+        "cel-python>=0.1.5",
     ],
 )
