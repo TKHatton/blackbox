@@ -127,30 +127,37 @@ def test_event_payload_cannot_be_mutated():
 
 
 def test_firestore_collection_structure():
-    """Prove that events are stored in a structure that doesn't support updates"""
-    store = EventStore(project_id="test-project")
-    
-    # Verify the collection path structure
-    # Events are stored in: cases/{case_id}/events/{event_id}
-    # This is a Firestore subcollection, and we only expose append_event()
-    
-    # Check that the class only exposes the expected methods
-    expected_methods = {'append_event', 'get_event', 'list_events', 'list_events_by_type', 'get_causal_chain', 'get_children'}
-    
-    # Get methods from the class, not the instance, to avoid triggering properties
-    actual_methods = {
+    """Prove that the store exposes no way to change an event once written.
+
+    This originally asserted an exact allowlist of six method names. That was too
+    strict in the wrong direction: it blocked new read methods while saying
+    nothing about what a method actually does. Phase 3 needs a cross-case read for
+    the heartbeat, so the test now polices the property that matters, which is
+    that exactly one method writes and none mutate.
+    """
+    public = {
         name for name in dir(EventStore)
         if not name.startswith('_') and callable(getattr(EventStore, name, None))
     }
-    
-    # Filter out inherited object methods
-    actual_methods = {
-        name for name in actual_methods
-        if name in expected_methods
-    }
-    
-    assert actual_methods == expected_methods, \
-        f"EventStore exposes unexpected methods: {actual_methods - expected_methods}"
+
+    # Exactly one write method.
+    assert 'append_event' in public
+
+    # No mutation, under any spelling.
+    forbidden_verbs = ('update', 'delete', 'remove', 'set_', 'patch', 'modify',
+                       'overwrite', 'edit', 'purge', 'truncate', 'drop', 'merge')
+    offenders = [
+        name for name in public
+        if any(verb in name.lower() for verb in forbidden_verbs)
+    ]
+    assert not offenders, f"EventStore exposes mutating methods: {offenders}"
+
+    # Every method other than append_event must be a read.
+    reads = public - {'append_event'}
+    assert reads <= {
+        'get_event', 'list_events', 'list_events_by_type',
+        'get_causal_chain', 'get_children', 'scan_events_by_type',
+    }, f"Unexpected non-read method on EventStore: {reads}"
 
 
 def test_no_bulk_operations():

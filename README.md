@@ -1,321 +1,278 @@
 # BLACKBOX: The Flight Recorder for AI Agents
 
-An autonomous fleet of AI agents that performs a regulated business workflow, sitting on top of an unerasable recording layer. Because everything the agents do is recorded, the platform can do things no current agent system can do: rewind any decision, replay it under different rules, trace any output back to the data that shaped it, and prove regulated data never reached where it shouldn't.
+An autonomous fleet of AI agents performing a regulated business workflow, sitting
+on top of an unerasable recording layer. Because everything the agents do is
+recorded, the platform can do things a normal agent system cannot: rewind any
+decision, replay it under different rules, trace any output back to the data that
+shaped it, and prove regulated data never reached where it should not.
 
-## Current Status
+## Status
 
-✅ **Phase 1: The Flight Recorder** - Complete  
-✅ **Phase 1.5: The Wiki and Three Shelves** - Complete  
-⏳ **Phase 2: One Agent, Deployed** - Next  
+| Phase | State |
+|---|---|
+| 0. Define the work | Done. See `WORKFLOW.md`. |
+| 1. The Flight Recorder | Done, and the write path now actually runs. See the note below. |
+| 1.5. The Wiki and three shelves | Wiki done. Tiering is still a stub. |
+| 2. One agent, deployed | Built and verified. Cloud Run deploy blocked on billing, see below. |
+| 3. The fleet wakes itself up | Done. Six agents, suspend and resume, heartbeat. |
+| 4. Invisible Ink | Next. |
 
-## Architecture
+### A correction to the earlier Phase 1 claim
 
-### Phase 1: Flight Recorder (Event Store)
+Phase 1 and 1.5 were previously marked complete on the strength of 39 passing
+tests. Those tests were structural. They inspected method signatures and asserted
+that no update or delete method existed, and never called `append_event` once. The
+write path had never run, and it could not have: it read `trace_id` and `span_id`
+off an OpenTelemetry `Tracer` object, which has neither, so every write raised
+`AttributeError`. The Wiki's update recorder imported a function that did not
+exist. The tracer built a new provider per call and exported to the console rather
+than to Cloud Trace.
 
-The append-only event log that is the sole source of truth for what happened.
+Phase 2 fixed all of that, because none of it could be built on otherwise. The
+Phase 2 suite exercises the write path end to end against a scripted model.
 
-**Key Components:**
-- **Event Schema** (`blackbox/schema.py`): Pydantic models with strict validation
-  - 10 event types: THOUGHT, TOOL_CALL, TOOL_RESULT, MEMORY_READ, MEMORY_WRITE, POLICY_CHECK, MESSAGE_SENT, SUSPEND, RESUME, ESCALATE
-  - Each event type has a specific payload schema
-  - Events are immutable (frozen Pydantic models)
-  - ULIDs for sortable, collision-resistant IDs
-  - Causal chains via `caused_by` field
-  
-- **Event Store** (`blackbox/event_store.py`): Class-based Firestore storage
-  - `EventStore` class with lazy initialization
-  - Methods: `append_event()`, `get_event()`, `list_events()`, `list_events_by_type()`, `get_causal_chain()`, `get_children()`
-  - **Append-only guarantee**: No update/delete/patch/modify/remove methods exist
-  - OpenTelemetry integration for distributed tracing
-  
-- **Fold Function** (`blackbox/fold.py`): Pure function to compute state
-  - `fold_case()`: Computes current state from event log
-  - `fold_events()`: Computes state from a list of events (for testing)
-  - Deterministic: same events always produce same state
-  - No caching, no side effects
+## What Phase 3 built
 
-**Storage Structure:**
-```
-Firestore:
-  cases/{case_id}/events/{event_id}
-```
+The fleet does work while nobody is watching.
 
-### Phase 1.5: Wiki and Three Shelves
+**Six agents.** Intake, Evidence, Assessment, Remediation, Correspondence, and
+the Compliance Officer. Each has one job and only the tools for that job. The
+Remediation Agent is the only one that can move money, because it is the only one
+given a tool that does, and a test asserts the other five cannot.
 
-Keeps the hot path small and fast forever, while retaining full history.
+**Waiting without staying resident.** An agent that cannot continue writes a
+`SUSPEND` event carrying a wake condition and stops. No process, thread, or
+coroutine remains. Four kinds of wait exist and they resume by different routes:
+a CommsVault batch job is asked, a human approval arrives on its own, a statutory
+clock passes, and a 30 day appeal window can be cut short by a customer replying.
 
-**Key Components:**
+**The wake condition is an event, never a variable.** This is the part that
+matters. If a pending case lived in process memory, a Cloud Run instance
+recycling would lose it silently. Because the condition is in the Diary, an
+instance that has been alive for four seconds finds exactly the same outstanding
+work as one that has been up for a week. There is a test for precisely that: it
+suspends a case, throws the store object away, builds a new one, and finds the
+work.
 
-- **Wiki** (`blackbox/wiki.py`): Condensed, current knowledge
-  - `WikiPage` model with `derived_from` tracking
-  - Pages are rewritten in place (unlike Diary events)
-  - Tracks which events produced this content
-  - Enables The Eraser (Phase 5) to cascade retractions
-  
-- **Wiki Store** (`blackbox/wiki_store.py`): Firestore-backed storage
-  - CRUD operations for Wiki pages
-  - Records updates in the Diary for audit trail
-  
-- **Tiering System** (`blackbox/tiering.py`): Three-shelf storage
-  - **Shelf 1 (Desk)**: Firestore - active cases, recent events (< 7 days)
-  - **Shelf 2 (Filing Cabinet)**: BigQuery - older events (7 days to retention window)
-  - **Shelf 3 (Warehouse)**: Cloud Storage - cold storage (beyond retention window)
-  - `TieringManager` with lazy initialization
-  - Transparent reads across all shelves
-  - Keeps Firestore small and fast
+**Resuming.** Context is rebuilt from the Wiki page plus the fold, never from raw
+events. The briefing states which conclusions are already settled, so a resumed
+agent extends the case instead of contradicting the version of itself that ran
+three days earlier. A case whose Wiki page is missing or empty is not resumed at
+all: it escalates and stays suspended, because an agent resuming onto a blank
+sheet would improvise.
 
-**Storage Structure:**
-```
-Firestore (Hot):
-  cases/{case_id}/events/{event_id}  # Recent events
-  wiki_pages/{page_id}               # Current knowledge
+**The heartbeat is not a polling loop.** Cloud Scheduler gives suspended agents
+an opportunity to evaluate conditions they themselves defined. The heartbeat has
+no opinion about any case and cannot start work no agent asked for. A test
+asserts that a beat with nothing suspended and no deadline near does nothing at
+all. Every wake decision is recorded as a `POLICY_CHECK` with its reasoning, so
+"why did this case wake on Thursday and not Wednesday" is answerable.
 
-BigQuery (Warm):
-  blackbox_events.events             # Older events (searchable)
+**Routing is judgment, not a switch statement.** The coordinator has one tool,
+which reads the case file, and five sub-agents. It decides who should act next
+and ADK carries the transfer. Its reasoning is recorded before the handoff. There
+is no ordered list of steps anywhere, and a test fails if one appears.
 
-Cloud Storage (Cold):
-  gs://bucket/events/{date}/         # Archived events
-```
+**Gates are enforced in code, not only in the prompt.** Gate A blocks a remedy
+above $500 without sign-off. Gate B stops every customer-facing statement while a
+case is flagged as possibly systemic. Both checks live in the tools, so an agent
+that talked itself past its instructions still cannot move money or write to a
+customer.
 
-## Installation
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Install the package in development mode
-pip install -e .
-```
-
-## Setup
-
-Set up Google Cloud credentials:
+### Seeing it work
 
 ```bash
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
-export GOOGLE_CLOUD_PROJECT="your-project-id"
+BLACKBOX_IN_MEMORY=1 python demo_lifecycle.py
 ```
 
-## Usage
+Runs one complaint through the whole workflow in a few seconds: intake, a wait on
+CommsVault, a heartbeat that wakes it days later on a fresh instance, assessment,
+an approval gate, the approval arriving, remediation, the final letter, the
+appeal window, and closure. The model is scripted and the calendar is compressed,
+and the script says so on screen as it happens. The waits themselves are not
+simulated: the agents genuinely suspend, and the suspensions genuinely live in
+the Diary.
 
-### Phase 1: Writing Events
+It ends with 47 events in one causal tree, three suspensions, three resumptions,
+and no internal reasoning in the letter that reached the customer.
 
-```python
-from blackbox.event_store import EventStore
-from blackbox.schema import EventType
+## What Phase 2 built
 
-# Initialize event store
-store = EventStore(project_id="your-project-id")
+One agent, deployed, with nothing in its path that needs a human to press a button.
 
-# Root event (no parent)
-event_id = store.append_event(
-    case_id="CASE-001",
-    event_type=EventType.THOUGHT,
-    payload={
-        "reasoning": "Customer complaint about unauthorized transaction",
-        "decision": "Classify as fraud investigation",
-        "confidence": 0.95,
-        "context_summary": "Initial intake of complaint"
-    },
-    actor="intake_agent"
-)
+**The Intake Agent** reads an arriving complaint, decides what it is, decides
+which jurisdiction governs it, judges whether the customer shows vulnerability
+indicators, and opens the case. It reasons through Gemini on Vertex AI and runs
+through Google ADK.
 
-# Child event (with parent)
-child_event_id = store.append_event(
-    case_id="CASE-001",
-    event_type=EventType.TOOL_CALL,
-    payload={
-        "tool_name": "CoreBank.get_transactions",
-        "parameters": {"account_id": "ACC-123", "days": 30},
-        "intended_outcome": "Retrieve recent transactions for investigation"
-    },
-    caused_by=event_id,
-    actor="evidence_agent"
-)
-```
+**How work starts.** Cloud Scheduler wakes a poller on a timer. The poller checks
+the inbound channels and publishes anything new to Pub/Sub. A message landing on
+that topic is what causes the agent to run. The poller never calls the agent
+directly, which is what lets Phase 3 add five more agents on their own topics
+without rewriting the ingress.
 
-### Phase 1: Folding Events
+**What gets recorded.** Every model turn becomes a `THOUGHT` event carrying
+Gemini's own words, not a summary of them. Every tool call becomes a `TOOL_CALL`,
+and its answer becomes a `TOOL_RESULT` recorded as that call's child. This happens
+in ADK callbacks, so there is no code path by which an agent can think or act
+without an event being written.
 
-```python
-from blackbox.fold import fold_case
+**The causal tree.** A case has exactly one root event, the complaint arriving.
+Everything else names a parent that exists. `Recorder.assert_causally_complete()`
+checks this, the tests assert it, and `/cases/{id}/trace` reports it. Null
+`caused_by` on most events is the Phase 1 failure mode that would make the Time
+Machine impossible later, so it is checked rather than hoped for.
 
-# Compute current state from event log
-state = fold_case("CASE-001", project_id="your-project-id")
-print(f"Status: {state.current_status}")
-print(f"Events: {len(state.events)}")
-print(f"Pending actions: {state.pending_actions}")
-```
+### The three source systems
 
-### Phase 1.5: Wiki Pages
+Stubs, with the personality that matters to the workflow:
 
-```python
-from blackbox.wiki import WikiPage
-from blackbox.wiki_store import WikiStore
-from datetime import datetime
+- **CoreBank** answers in under a second. Its transaction records name third
+  parties the bank has no right to disclose to the complainant.
+- **CRM360** answers immediately, and is the origin of vulnerability flags, which
+  are special category data.
+- **CommsVault** does not answer. It returns a job id and a ready time two to
+  three days out. This is what makes step 5 of the workflow a genuine
+  asynchronous wait, and it is what Phase 3 builds suspend and resume on.
 
-# Initialize Wiki store
-wiki_store = WikiStore(project_id="your-project-id")
+Two outbound stubs exist for later phases: **PrintPost**, a US-based letter
+vendor, and **RegPortal**, the regulator endpoint.
 
-# Create a Wiki page
-page = WikiPage(
-    page_id="wiki-case-001",
-    subject="CASE-001",
-    subject_type="case",
-    content={
-        "status": "open",
-        "summary": "Customer complaint about unauthorized transaction",
-        "assigned_to": "intake_agent",
-        "priority": "high"
-    },
-    derived_from=["event-001", "event-002", "event-003"],
-    version=1,
-    created_at=datetime.utcnow(),
-    updated_at=datetime.utcnow()
-)
-
-wiki_store.create_page(page)
-
-# Update the page when new events arrive
-updated_page = page.regenerate(
-    new_content={
-        "status": "in_progress",
-        "summary": "Evidence gathered, awaiting assessment",
-        "assigned_to": "assessment_agent",
-        "priority": "high"
-    },
-    new_derived_from=["event-001", "event-002", "event-003", "event-004"]
-)
-
-wiki_store.update_page(updated_page)
-```
-
-### Phase 1.5: Tiering
-
-```python
-from blackbox.tiering import TieringManager
-from blackbox.event_store import EventStore
-
-# Initialize tiering manager
-event_store = EventStore(project_id="your-project-id")
-tiering = TieringManager(
-    project_id="your-project-id",
-    event_store=event_store,
-    hot_ttl_days=7,      # Events older than 7 days move to BigQuery
-    cold_ttl_days=365,   # Events older than 365 days move to Cloud Storage
-    bucket_name="blackbox-archive"
-)
-
-# Create BigQuery schema (run once)
-tiering.ensure_bigquery_schema()
-
-# Tier old events (run periodically, e.g., daily)
-events_moved = tiering.tier_old_events()
-print(f"Moved {events_moved} events to BigQuery")
-
-# Archive to cold storage (run periodically, e.g., monthly)
-events_archived = tiering.archive_to_cold_storage()
-print(f"Archived {events_archived} events to Cloud Storage")
-
-# Read events (transparent across all shelves)
-events = tiering.read_case_events("CASE-001")
-print(f"Total events: {len(events)}")
-```
-
-## Testing
-
-Run all tests:
-
-```bash
-pytest tests/ -v
-```
-
-Run specific test suites:
-
-```bash
-# Phase 1: Schema tests
-pytest tests/test_schema.py -v
-
-# Phase 1: Destructive tests (proves append-only guarantee)
-pytest tests/test_destructive.py -v
-
-# Phase 1.5: Wiki and tiering tests
-pytest tests/test_phase1_5.py -v
-```
-
-**Test Results:**
-- 39 tests passing
-- 0 failures
-- Coverage: Event schema, payload validation, causal chains, append-only guarantee, Wiki pages, tiering system
-
-## Hard Constraints
-
-✓ All inference through Gemini 3.5 Flash (Phase 2+)  
-✓ Google Cloud only (Firestore, BigQuery, Cloud Storage, Cloud Trace)  
-✓ Append-only: no update() or delete() methods exist on EventStore  
-✓ Causal tree: caused_by links form parent-child relationships  
-✓ Immutable events: Pydantic frozen models prevent mutation  
-✓ ULIDs: Sortable, collision-resistant event IDs  
-✓ Lazy initialization: Clients only connect when needed  
-
-## What's Next
-
-### Phase 2: One Agent, Deployed
-- Deploy Intake Agent to Cloud Run
-- Integrate with Gemini 3.5 Flash via Vertex AI
-- Record all reasoning as THOUGHT events
-- Stub services for CoreBank, CRM360, CommsVault
-- Live `.run` URL with Cloud Trace visualization
-
-### Phase 3: The Fleet Wakes Itself Up
-- Suspend/resume mechanism for long-running workflows
-- Pub/Sub triggers for external events
-- Cloud Scheduler for heartbeat and wake conditions
-- Multiple agents collaborating on complaint workflow
-
-### Phase 4: Invisible Ink
-- Data labeling system for sensitive information
-- Label propagation through Gemini calls
-- Exit checks before outbound actions
-- Taint path queries for blocked disclosures
-
-## Domain: Regulated Complaint Handling
-
-This system is designed for a mid-size retail bank operating in the US, UK, and EU. The workflow involves:
-
-- **6 specialized agents**: Intake, Evidence, Assessment, Remediation, Correspondence, Compliance Officer
-- **Statutory deadlines**: Complaint handling runs on legal clocks
-- **Sensitive data**: Health disclosures, financial records, PII across jurisdictions
-- **Human approval gates**: Monetary thresholds and systemic pattern flags
-- **Cross-border transfers**: EU data protection rules
-
-Every feature in BLACKBOX has work to do in this workflow.
-
-## Project Structure
+## Layout
 
 ```
 blackbox/
-├── blackbox/
-│   ├── __init__.py
-│   ├── schema.py              # Event and payload schemas
-│   ├── event_store.py         # Append-only event storage
-│   ├── fold.py                # State computation from events
-│   ├── wiki.py                # Wiki page schemas
-│   ├── wiki_store.py          # Wiki storage
-│   ├── tiering.py             # Three-shelf storage system
-│   └── opentelemetry_setup.py # Tracing configuration
-├── tests/
-│   ├── test_schema.py         # Schema validation tests
-│   ├── test_destructive.py    # Append-only guarantee tests
-│   └── test_phase1_5.py       # Wiki and tiering tests
-├── requirements.txt
-├── setup.py
-└── README.md
+  config.py            Settings, from the environment
+  schema.py            The event schema. 10 types, frozen, ULID ids
+  backends.py          Append-only storage. Firestore create(), never set()
+  event_store.py       The one write method
+  recorder.py          Agent-facing recorder. Keeps caused_by populated
+  fold.py              State computed from events, never stored
+  wiki.py              Wiki page schema, with derived_from
+  wiki_store.py        Wiki storage. Rewrites in place, records each rewrite
+  tiering.py           Three shelves. Still a stub, see below
+  wake.py              Wake conditions, and finding open suspensions
+  heartbeat.py         The beat that lets suspended agents evaluate their own waits
+  approvals.py         Approvals and customer replies arriving by Pub/Sub
+  ingest.py            The poller and the Pub/Sub decode
+  main.py              The Cloud Run service
+  opentelemetry_setup.py
+  agents/
+    intake_agent.py    The ADK agent and its instruction
+    intake_tools.py    The tools Gemini can call
+    intake_service.py  Opens the case, runs ADK, writes the Wiki page
+    fleet.py           The five remaining agents and the routing coordinator
+    fleet_tools.py     Their tools, including the two that suspend
+    fleet_service.py   Advancing a case, and resuming a suspended one
+    rehydrate.py       Rebuilding context from the Wiki plus the fold
+    callbacks.py       ADK hooks that write to the Flight Recorder
+    runtime.py         Per-run context, so tools can reach the recorder
+  stubs/
+    systems.py         CoreBank, CRM360, CommsVault, PrintPost, RegPortal
+    data.py            Synthetic customers, accounts, and complaints
+tests/
+  test_schema.py       Phase 1 schema
+  test_destructive.py  Phase 1 append-only guarantee
+  test_phase1_5.py     Wiki and tiering
+  test_phase2.py       The agent, recorded end to end
+  test_phase3.py       Suspend, resume, wake decisions, routing, gates
+  conftest.py          In-memory fixtures, so the suite needs no credentials
+  fakes.py             A scripted stand-in for Gemini, tests only
+demo_lifecycle.py      One complaint, start to finish, with time compressed
 ```
+
+## Running it locally
+
+```bash
+python -m venv .venv
+.venv/Scripts/pip install -r requirements.txt
+```
+
+The tests need no Google Cloud credentials and make no network calls. They run
+against the in-memory backend with a scripted model.
+
+```bash
+.venv/Scripts/python -m pytest -q
+```
+
+86 tests, all passing.
+
+To run the service locally against the in-memory store:
+
+```bash
+BLACKBOX_IN_MEMORY=1 GOOGLE_CLOUD_PROJECT=local .venv/Scripts/python -m uvicorn blackbox.main:app --reload
+```
+
+Note that `/debug/intake/{ref}` will then try to reach Vertex AI, which needs
+credentials. Everything else works offline.
+
+## Deploying
+
+See `DEPLOY.md`. Short version: fill in `.env`, then `bash deploy.sh`.
+
+## Inspecting a running system
+
+| Endpoint | What it shows |
+|---|---|
+| `GET /healthz` | How this instance is configured |
+| `GET /cases` | Every seeded complaint, and whether a case is open |
+| `GET /cases/{id}` | State, computed by folding the log |
+| `GET /cases/{id}/trace` | The causal tree, and whether it is intact |
+| `GET /cases/{id}/reasoning` | Just the THOUGHT events, in order |
+| `GET /suspensions` | Every wait the fleet is holding, and what would end it |
+| `GET /wiki/{page_id}` | What agents read during normal operation |
+| `GET /stubs/...` | The source systems, for inspection |
+
+Four endpoints cause work, and all four are called by machines:
+
+| Endpoint | Called by | Effect |
+|---|---|---|
+| `POST /ingest/poll` | Cloud Scheduler, every 10 min | Publishes newly arrived complaints |
+| `POST /heartbeat` | Cloud Scheduler, every 5 min | Lets suspended agents evaluate their waits |
+| `POST /pubsub/approval` | Pub/Sub | An approval wakes the case waiting on it |
+| `POST /pubsub/customer-reply` | Pub/Sub | A reply cuts an appeal window short |
+
+None of them is meant for a person.
+
+## Hard constraints, and where they are held
+
+- **Gemini only.** The model id lives in one place, `config.gemini_model`.
+  Nothing else in the codebase names a model. `tests/fakes.py` scripts a stand-in
+  for tests and is never imported by shipped code.
+- **Google ADK.** The agent is an `LlmAgent`, run by ADK's `Runner`. A test
+  asserts this, because a hand-rolled inference loop would pass every other test
+  while failing the requirement.
+- **Google Cloud only.** Cloud Run, Firestore, Pub/Sub, Cloud Scheduler, Vertex
+  AI, Cloud Trace.
+- **No manual trigger.** Work begins when a message lands on a topic.
+  `/debug/intake` exists to check a fresh deployment and is not on the autonomous
+  path.
+- **Reasoning is a recorded artifact.** THOUGHT events carry what the model said.
+
+## Known gaps
+
+- **Tiering is not implemented.** `tiering.tier_old_events()` prints a line and
+  returns zero. It neither copies to BigQuery nor deletes from Firestore, so the
+  Filing Cabinet is empty and Firestore grows without limit. Phase 1.5's own
+  failure mode list names this exact shape. It needs building before any claim
+  about flat Firestore document counts is true.
+- **CommsVault job records live in process memory.** The wake condition moved
+  into the Diary in Phase 3, so no case is lost when an instance recycles. What
+  is still in memory is the stub's own map of job ids to ready times, so a
+  recycled instance answers "unknown job" and the case stays suspended rather
+  than resuming wrongly. Moving the stub's state into Firestore is small work
+  and is not done.
+- **Labels are empty.** Every event carries a `labels` field and nothing fills it
+  yet. The source systems already mark their fields with sensitivity classes, so
+  Phase 4 has somewhere to start from.
+
+## Domain
+
+A mid-size retail bank operating in the US, UK, and EU, handling regulated
+customer complaints. Six agents, statutory deadlines, health disclosures, three
+jurisdictions, and human sign-off at defined thresholds. Full description in
+`WORKFLOW.md`.
 
 ## License
 
-Private - Hackathon Project
-
-## Contact
-
-Built for the "All Things Agentic" hackathon (Google, August 2026).
+Private. Hackathon project.
