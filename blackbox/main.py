@@ -31,6 +31,7 @@ from .opentelemetry_setup import configure_tracing
 from .recorder import Recorder
 from .stubs import data
 from .stubs.systems import SourceSystemError, get_source_systems
+from .taint import blocked_disclosures, summarise_path, taint_path
 from .wake import find_open_suspensions
 from .wiki_store import WikiStore
 
@@ -73,8 +74,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="BLACKBOX",
-    description="The flight recorder for AI agents. Phase 3: the fleet wakes itself up.",
-    version="0.3.0",
+    description="The flight recorder for AI agents. Phase 4: Invisible Ink.",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -85,7 +86,7 @@ def healthz() -> Dict[str, Any]:
     settings = get_settings()
     return {
         "status": "ok",
-        "phase": "3",
+        "phase": "4",
         "project_id": settings.project_id or None,
         "firestore_database": settings.firestore_database,
         "gemini_model": settings.gemini_model,
@@ -273,6 +274,27 @@ def get_case_reasoning(case_id: str) -> Dict[str, Any]:
             for e in events
         ],
     }
+
+
+@app.get("/cases/{case_id}/blocked")
+def get_blocked_disclosures(case_id: str) -> Dict[str, Any]:
+    """Every disclosure the gateway refused on this case, and why."""
+    return {"case_id": case_id, "blocked": blocked_disclosures(get_store(), case_id)}
+
+
+@app.get("/taint/{event_id}")
+def get_taint_path(event_id: str) -> Dict[str, Any]:
+    """Trace a labelled action back to the data that shaped it.
+
+    Point this at a blocked POLICY_CHECK and it returns the chain from the
+    original source field to the attempted disclosure, one entry per hop, showing
+    where each restriction attached and that it never came off.
+    """
+    path = taint_path(get_store(), event_id)
+    if not path.get("found"):
+        raise HTTPException(status_code=404, detail=f"No event {event_id}")
+    path["rendered"] = summarise_path(path)
+    return path
 
 
 @app.get("/wiki/{page_id:path}")

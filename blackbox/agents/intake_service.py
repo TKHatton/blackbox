@@ -23,6 +23,8 @@ from google.genai import types
 
 from ..config import get_settings
 from ..event_store import EventStore
+from ..labels import Label
+from ..propagation import label_complaint_narrative
 from ..recorder import Recorder
 from ..schema import EventType
 from ..stubs.systems import SourceSystems
@@ -102,8 +104,15 @@ async def run_intake(
         intended_outcome="Collect complaints that have arrived since the last poll",
     )
 
+    # Invisible Ink, hop zero. The narrative is MIXED: unexamined free text that
+    # may contain anything. At this moment the system does not yet know the
+    # customer has written about their health. The label says only "nobody has
+    # read this yet", and everything downstream builds on it.
+    narrative_label = label_complaint_narrative(complaint)
+
     with recorder.under(poll_event):
         arrival_event = recorder.tool_result(
+            labels=narrative_label.to_dict(),
             tool_name="IntakeChannel.poll",
             success=True,
             result={
@@ -129,7 +138,8 @@ async def run_intake(
     message = types.Content(role="user", parts=[types.Part(text=_prompt_for(complaint))])
 
     final_text = ""
-    with agent_run(recorder=recorder, systems=systems) as run:
+    with agent_run(recorder=recorder, systems=systems, wiki_store=wiki_store) as run:
+        run.absorb(narrative_label)
         async for event in runner.run_async(
             user_id="fleet", session_id=case_id, new_message=message
         ):
@@ -137,6 +147,10 @@ async def run_intake(
                 final_text = "".join(p.text or "" for p in event.content.parts).strip()
 
         determination = run.determination
+        # The label the agent accumulated while working the case. The Wiki
+        # write carries it, so the causal chain to any later disclosure passes
+        # through an event that names where the sensitivity came from.
+        accumulated = run.taint
 
     if determination is None:
         # The agent finished without opening the case. That is a real outcome and
@@ -156,6 +170,7 @@ async def run_intake(
             wiki_store=wiki_store,
             complaint=complaint,
             determination=determination,
+            label=accumulated,
         )
 
     recorder.assert_causally_complete()
@@ -174,6 +189,7 @@ def _write_case_page(
     wiki_store: WikiStore,
     complaint: Dict[str, Any],
     determination: Dict[str, Any],
+    label: Optional[Label] = None,
 ) -> None:
     """Write the case's Wiki page and record the write in the Diary.
 
@@ -224,6 +240,7 @@ def _write_case_page(
     wiki_store.create_page(page)
 
     recorder.memory_write(
+        labels=(label or Label.public()).to_dict(),
         memory_key=f"wiki:{page.page_id}",
         content=content,
         reason="Case opened by the Intake Agent. Wiki page created for downstream agents.",

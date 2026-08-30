@@ -578,7 +578,8 @@ def test_remediation_refuses_without_approval(store, wiki, systems):
     assert blocks
 
 
-def test_systemic_flag_blocks_customer_contact(store, wiki, systems):
+@pytest.mark.asyncio
+async def test_systemic_flag_blocks_customer_contact(store, wiki, systems):
     """Gate B stops any customer-facing statement until Compliance signs off."""
     seed_case(store, wiki, gate_b_required=True, systemic_flag=True)
 
@@ -587,7 +588,7 @@ def test_systemic_flag_blocks_customer_contact(store, wiki, systems):
     with agent_run(recorder=recorder, systems=systems, wiki_store=wiki):
         from blackbox.agents.fleet_tools import send_customer_letter
 
-        out = send_customer_letter("final_response", "Dear customer...", "final response")
+        out = await send_customer_letter("final_response", "Dear customer...", "final response")
 
     assert out["sent"] is False
     assert "systemic" in out["error"]
@@ -625,15 +626,27 @@ def test_assessment_sets_gates_from_the_threshold(store, wiki, systems):
     assert above["gate_a_required"] is True
 
 
-def test_internal_reasoning_is_marked_and_stays_off_the_letter(store, wiki, systems):
-    """Assessment reasoning is labelled internal and never reaches the customer."""
+@pytest.mark.asyncio
+async def test_internal_reasoning_is_marked_and_stays_off_the_letter(store, wiki, systems):
+    """Assessment reasoning is labelled internal and never reaches the customer.
+
+    The letter itself is allowed: it states the outcome and its grounds, which the
+    customer is entitled to. Phase 4's judge is what draws that line, so a
+    scripted ALLOW stands in for it here.
+    """
     from blackbox.agents.fleet_tools import record_assessment, send_customer_letter
 
-    seed_case(store, wiki)
+    seed_case(store, wiki, jurisdiction="US")
     recorder = Recorder(case_id=CASE, actor="assessment_agent", store=store)
     recorder.set_cause(recorder.events()[-1].event_id)
 
-    with agent_run(recorder=recorder, systems=systems, wiki_store=wiki):
+    judge = ScriptedLlm(
+        [say("ALLOW: The letter states the outcome and the reason for it, which the "
+             "customer is entitled to, and repeats no internal file note.")]
+    )
+    with agent_run(
+        recorder=recorder, systems=systems, wiki_store=wiki, judge_model=judge
+    ):
         record_assessment(
             outcome="upheld",
             reasoning="SECRET_INTERNAL_NOTE: the branch mishandled this.",
@@ -642,7 +655,7 @@ def test_internal_reasoning_is_marked_and_stays_off_the_letter(store, wiki, syst
             looks_systemic=False,
             systemic_reasoning="Isolated.",
         )
-        send_customer_letter(
+        await send_customer_letter(
             "final_response",
             "We are sorry. We have refunded the fees.",
             "final response",

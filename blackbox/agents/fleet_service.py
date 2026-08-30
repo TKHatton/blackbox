@@ -44,6 +44,7 @@ async def _run_agent(
     systems: Optional[SourceSystems],
     wiki_store: WikiStore,
     session_suffix: str,
+    judge_model: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Drive one ADK turn and report what came of it."""
     session_service = InMemorySessionService()
@@ -56,7 +57,9 @@ async def _run_agent(
 
     final_text = ""
     acting_agents = []
-    with agent_run(recorder=recorder, systems=systems, wiki_store=wiki_store) as run:
+    with agent_run(
+        recorder=recorder, systems=systems, wiki_store=wiki_store, judge_model=judge_model
+    ) as run:
         async for event in runner.run_async(
             user_id="fleet", session_id=session_id, new_message=message
         ):
@@ -111,6 +114,7 @@ async def advance_case(
         systems=systems,
         wiki_store=wiki_store,
         session_suffix="advance",
+        judge_model=model,
     )
 
 
@@ -187,6 +191,7 @@ async def resume_case(
         systems=systems,
         wiki_store=wiki_store,
         session_suffix=f"resume:{suspension.suspend_event_id}",
+        judge_model=model,
     )
     result["resumed"] = True
     result["resume_event_id"] = resume_event

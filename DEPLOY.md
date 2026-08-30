@@ -4,7 +4,9 @@ What you end up with: six ADK agents running on Cloud Run, reasoning through
 Gemini on Vertex AI, writing every thought and tool call to an append-only
 Firestore log. Complaints arrive on a Pub/Sub topic, agents suspend themselves
 when they have to wait, and a Cloud Scheduler heartbeat lets them decide when to
-wake. Nothing runs because a person pressed a button.
+wake. Nothing runs because a person pressed a button. Every outbound path passes
+a disclosure gateway that can refuse a letter containing no sensitive word,
+because of where its content is derived from.
 
 ## Before you start
 
@@ -171,6 +173,22 @@ for this: the message arriving is the wake condition being met.
 gcloud pubsub topics publish blackbox-approvals --message '{"case_id":"CASE-CMP-2026-0841","gate":"A","approved":true,"approver":"you"}'
 ```
 
+See what the gateway has refused, and why:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://YOUR-SERVICE-URL/cases/CASE-CMP-2026-0841/blocked
+```
+
+Then trace one of those blocks back to the data that caused it. Pass the
+`event_id` from the call above:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://YOUR-SERVICE-URL/taint/EVENT_ID
+```
+
+The response has a `rendered` field holding the trail as readable lines, one per
+hop, marking where each restriction attached.
+
 The demonstration worth watching is the one you cannot rush: suspend a case,
 close the laptop, and come back the next day. The CommsVault waits are two to
 three days, so a case that stopped on Monday resumes on Wednesday or Thursday,
@@ -213,7 +231,6 @@ The tiering job from Phase 1.5 is still a stub. It does not copy to BigQuery and
 it does not delete from Firestore, so Firestore will grow. That is fine at these
 volumes and needs fixing before the Filing Cabinet claim is true.
 
-Invisible Ink is Phase 4. Every event carries a `labels` field and nothing fills
-it yet, so nothing is gated on data sensitivity at the outbound path. The source
-systems already mark their fields with sensitivity classes, so the labels have a
-documented origin to point back at when Phase 4 starts.
+The Eraser is Phase 5. Wiki pages record `derived_from`, so the graph a
+retraction cascade would walk already exists, but nothing walks it yet and no
+region pinning is enforced on where a page is stored.

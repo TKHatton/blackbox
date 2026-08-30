@@ -15,7 +15,8 @@ shaped it, and prove regulated data never reached where it should not.
 | 1.5. The Wiki and three shelves | Wiki done. Tiering is still a stub. |
 | 2. One agent, deployed | Built and verified. Cloud Run deploy blocked on billing, see below. |
 | 3. The fleet wakes itself up | Done. Six agents, suspend and resume, heartbeat. |
-| 4. Invisible Ink | Next. |
+| 4. Invisible Ink | Done. Label lattice, propagation, exit checks, taint path. |
+| 5. The Eraser | Next. |
 
 ### A correction to the earlier Phase 1 claim
 
@@ -30,6 +31,59 @@ than to Cloud Trace.
 
 Phase 2 fixed all of that, because none of it could be built on otherwise. The
 Phase 2 suite exercises the write path end to end against a scripted model.
+
+## What Phase 4 built
+
+Sensitive data carries a stamp that survives summarising, merging, and rephrasing.
+
+**The stamp is on the derivation, not the words.** This is the single idea the
+phase rests on. A model output carries the join of the labels of everything that
+model turn could see. Not "everything relevant": everything, because a language
+model conditions on its whole context. That is why the label does not wash off at
+the first summarisation. It was never attached to the wording, so rewording
+cannot remove it.
+
+**Sensitivity is a set, not a number.** The obvious design is one value per label
+ordered least to most restrictive, combined by taking the maximum. That design
+under-restricts, silently. `INTERNAL_ONLY` means never to a customer;
+`PII_HIGH` means never outside the bank; `THIRD_PARTY_PII` means not to *this*
+recipient. Ask which is higher and the question has no answer, and forcing them
+onto one axis loses whichever comes second. So a label carries a set of classes,
+combination is union, and the set is reduced to a maximal antichain so
+`{PII, SPECIAL_CATEGORY}` collapses to `{SPECIAL_CATEGORY}` without dropping the
+PII restriction. Tests assert the join is commutative, associative, idempotent,
+has an identity, and never loosens either input.
+
+**Rules for the unambiguous, Gemini for the rest.** Three things are decided by
+rule, because each has a correct answer that does not depend on wording: a
+national identifier leaving the bank, special category data crossing to a third
+country with no adequacy basis, and a third party's name going to the
+complainant. `INTERNAL_ONLY` is deliberately not a rule: every final response is
+derived from the assessment, so a rule on that derivation would block every
+letter the bank ever sends. Whether a letter states the outcome, which the
+customer is entitled to, or repeats the file note, which they are not, is a
+judgment about the content. Gemini makes it, and its reasoning is recorded as the
+basis for the decision. An unparseable answer blocks, because a gateway that
+fails open would be worse than no gateway.
+
+**A block is a gate, not a wall.** The cross-border rule asks for a documented
+transfer basis. Recording one clears it, and the recording names who authorised
+it. The data is no less sensitive; the decision now has a person attached.
+
+### The moment worth watching
+
+```bash
+BLACKBOX_IN_MEMORY=1 python demo_invisible_ink.py
+```
+
+An EU-resident customer mentions a cancer diagnosis in a complaint about fees.
+Four hops later a different agent, which has never seen the complaint, writes her
+a kind letter containing no medical word at all. Twelve medical terms searched
+for; none present. The gateway blocks it anyway, because the letter descends from
+that sentence, and it prints the trail back to her exact words.
+
+Then it shows the hop where the restriction attached and the hop where the block
+happened. No keyword filter could have made that call.
 
 ## What Phase 3 built
 
@@ -151,6 +205,10 @@ blackbox/
   wiki.py              Wiki page schema, with derived_from
   wiki_store.py        Wiki storage. Rewrites in place, records each rewrite
   tiering.py           Three shelves. Still a stub, see below
+  labels.py            The label lattice and the combination rule
+  propagation.py       How a label survives a model call
+  gateway.py           Exit checks. Rules first, Gemini for the ambiguous
+  taint.py             From a blocked action back to the source sentence
   wake.py              Wake conditions, and finding open suspensions
   heartbeat.py         The beat that lets suspended agents evaluate their own waits
   approvals.py         Approvals and customer replies arriving by Pub/Sub
@@ -176,9 +234,11 @@ tests/
   test_phase1_5.py     Wiki and tiering
   test_phase2.py       The agent, recorded end to end
   test_phase3.py       Suspend, resume, wake decisions, routing, gates
+  test_phase4.py       The lattice, propagation, the gateway, the taint path
   conftest.py          In-memory fixtures, so the suite needs no credentials
   fakes.py             A scripted stand-in for Gemini, tests only
 demo_lifecycle.py      One complaint, start to finish, with time compressed
+demo_invisible_ink.py  The four-hop block, and why no filter could catch it
 ```
 
 ## Running it locally
@@ -195,7 +255,7 @@ against the in-memory backend with a scripted model.
 .venv/Scripts/python -m pytest -q
 ```
 
-86 tests, all passing.
+117 tests, all passing.
 
 To run the service locally against the in-memory store:
 
@@ -220,6 +280,8 @@ See `DEPLOY.md`. Short version: fill in `.env`, then `bash deploy.sh`.
 | `GET /cases/{id}/trace` | The causal tree, and whether it is intact |
 | `GET /cases/{id}/reasoning` | Just the THOUGHT events, in order |
 | `GET /suspensions` | Every wait the fleet is holding, and what would end it |
+| `GET /cases/{id}/blocked` | Disclosures the gateway refused, and why |
+| `GET /taint/{event_id}` | The chain from a blocked action back to its source |
 | `GET /wiki/{page_id}` | What agents read during normal operation |
 | `GET /stubs/...` | The source systems, for inspection |
 
@@ -262,9 +324,12 @@ None of them is meant for a person.
   recycled instance answers "unknown job" and the case stays suspended rather
   than resuming wrongly. Moving the stub's state into Firestore is small work
   and is not done.
-- **Labels are empty.** Every event carries a `labels` field and nothing fills it
-  yet. The source systems already mark their fields with sensitivity classes, so
-  Phase 4 has somewhere to start from.
+- **Propagation is conservative.** A turn that saw special category data carries
+  that class even if it only wrote about fees. Over-restriction is the safe
+  direction and the label's origins say which source caused it, so a cautious
+  block is legible rather than mysterious. A finer-grained model would need to
+  ask Gemini which facts it actually used, and a model that under-reports its own
+  influences produces a label that is quietly too loose.
 
 ## Domain
 

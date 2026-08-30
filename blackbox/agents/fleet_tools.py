@@ -15,6 +15,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from .. import wake
+from ..gateway import Destination, DisclosureRequest, check_disclosure
+from ..labels import Label, Provenance, Sensitivity
+from ..propagation import label_assessment
 from ..stubs.systems import SourceSystemError
 from ..wiki import WikiPage, WikiUpdate
 from .runtime import current_run
@@ -321,6 +324,10 @@ def record_assessment(
         reason="Assessment Agent decided the outcome and proposed a remedy",
     )
 
+    # Invisible Ink. From here on, anything this agent writes is derived from
+    # internal reasoning, and the Correspondence Agent must not repeat it.
+    run.absorb(label_assessment({"reasoning": reasoning}))
+
     run.outputs["assessment"] = {"outcome": outcome, "remedy_amount": remedy_amount}
     return {
         "status": "ASSESSED",
@@ -457,13 +464,18 @@ def execute_remedy(account_id: str, amount: float, description: str) -> Dict[str
 # ----------------------------------------------------------------------
 
 
-def send_customer_letter(letter_type: str, body: str, purpose: str) -> Dict[str, Any]:
+async def send_customer_letter(letter_type: str, body: str, purpose: str) -> Dict[str, Any]:
     """Send a letter to the customer through PrintPost.
 
     This is what the customer actually reads, so it is the one place where a
     mistake reaches a person outside the bank. Write plainly and warmly. Never
     include internal assessment reasoning, and never name another customer who
     appears in a transaction record.
+
+    Everything sent this way passes the disclosure gateway first. If the gateway
+    refuses, nothing is sent, and you will be told why. Do not try to work around
+    a refusal by rewording: the restriction follows what the content is derived
+    from, not the words you chose.
 
     Args:
         letter_type: One of acknowledgment, holding, final_response, appeal_outcome.
@@ -472,7 +484,7 @@ def send_customer_letter(letter_type: str, body: str, purpose: str) -> Dict[str,
             letter that closes the case.
 
     Returns:
-        The result of the send.
+        The result of the send, or a refusal explaining why nothing went out.
     """
     run = current_run()
     wiki = run.require_wiki()
@@ -495,9 +507,61 @@ def send_customer_letter(letter_type: str, body: str, purpose: str) -> Dict[str,
         return {"error": refusal, "sent": False}
 
     recipient = str(content.get("customer_id", "unknown"))
+
+    # Invisible Ink. The letter carries everything this agent has read, joined
+    # with the jurisdiction the case was assigned at intake.
+    label = run.taint
+    if content.get("jurisdiction"):
+        label = label.join(Label.make([], {content["jurisdiction"]}, []))
+    if content.get("vulnerability_indicators"):
+        label = label.join(
+            Label.make(
+                [Sensitivity.SPECIAL_CATEGORY],
+                {content.get("jurisdiction")} if content.get("jurisdiction") else set(),
+                [
+                    Provenance(
+                        "Intake",
+                        "vulnerability_indicators",
+                        None,
+                        str(content.get("vulnerability_reasoning", ""))[:160],
+                    )
+                ],
+            )
+        )
+    run.taint = label
+
+    verdict = await check_disclosure(
+        DisclosureRequest(
+            content=body,
+            label=label,
+            destination=Destination.CUSTOMER,
+            destination_system=run.systems.printpost.name,
+            recipient=recipient,
+            purpose=purpose,
+            case_id=run.recorder.case_id,
+            adequacy_basis=content.get("transfer_adequacy_basis"),
+        ),
+        recorder=run.recorder,
+        model=run.judge_model,
+    )
+
+    if not verdict.allowed:
+        return {
+            "sent": False,
+            "blocked_by": verdict.rule_id,
+            "reason": verdict.reasoning,
+            "judged_by": verdict.judged_by,
+            "policy_check_event_id": verdict.event_id,
+            "note": (
+                "Nothing was sent. The restriction follows what this content is "
+                "derived from, so rewording it will not help. Escalate instead."
+            ),
+        }
+
     result = run.systems.printpost.send_letter(recipient=recipient, body=body)
 
     run.recorder.message_sent(
+        labels=label.to_dict(),
         recipient=recipient,
         channel="post_via_printpost",
         content=body,
@@ -651,22 +715,50 @@ def escalate_to_human(why: str, urgency: str) -> Dict[str, Any]:
     return {"status": "ESCALATED", "event_id": event_id, "urgency": urgency}
 
 
-def file_with_regulator(jurisdiction: str, summary: str) -> Dict[str, Any]:
+async def file_with_regulator(jurisdiction: str, summary: str) -> Dict[str, Any]:
     """File a report about this case with the regulator.
 
     Only for cases that must be reported. Filing is visible outside the bank and
-    cannot be taken back, so be sure before you call it.
+    cannot be taken back, so be sure before you call it. It passes the disclosure
+    gateway like any other outbound path.
 
     Args:
         jurisdiction: Which regulator, for example UK or EU_IE.
         summary: What is being reported.
 
     Returns:
-        The filing reference.
+        The filing reference, or a refusal explaining why nothing was filed.
     """
     run = current_run()
+
+    label = run.taint.join(Label.make([], {jurisdiction}, []))
+    run.taint = label
+
+    verdict = await check_disclosure(
+        DisclosureRequest(
+            content=summary,
+            label=label,
+            destination=Destination.REGULATOR,
+            destination_system=run.systems.regportal.name,
+            recipient=f"regulator:{jurisdiction}",
+            purpose="Regulatory filing",
+            case_id=run.recorder.case_id,
+        ),
+        recorder=run.recorder,
+        model=run.judge_model,
+    )
+
+    if not verdict.allowed:
+        return {
+            "filed": False,
+            "blocked_by": verdict.rule_id,
+            "reason": verdict.reasoning,
+            "policy_check_event_id": verdict.event_id,
+        }
+
     result = run.systems.regportal.file_report(jurisdiction=jurisdiction, summary=summary)
     run.recorder.message_sent(
+        labels=label.to_dict(),
         recipient=f"regulator:{jurisdiction}",
         channel="regportal",
         content=summary,
@@ -676,7 +768,49 @@ def file_with_regulator(jurisdiction: str, summary: str) -> Dict[str, Any]:
         {"regulator_filed": True, "regulator_reference": result["reference"]},
         reason="Compliance Officer filed with the regulator",
     )
+    result["filed"] = True
     return result
+
+
+def record_transfer_adequacy_basis(basis: str, who_authorised: str) -> Dict[str, Any]:
+    """Record a legal basis for sending this case's data to a third country.
+
+    Use this when the gateway has refused an outbound action because the case
+    carries special category data from a restricted jurisdiction and the
+    destination is outside it. Recording a basis does not make the data less
+    sensitive. It documents who decided the transfer may proceed and on what
+    grounds, so that the decision has a name attached to it.
+
+    Do not invent a basis to clear a block. If none applies, escalate instead.
+
+    Args:
+        basis: The grounds, for example "standard contractual clauses with the
+            vendor, executed 2026-03-01" or "explicit consent obtained from the
+            customer on 2026-08-30".
+        who_authorised: The person or role standing behind this.
+
+    Returns:
+        Confirmation that the basis is recorded against the case.
+    """
+    run = current_run()
+    run.recorder.policy_check(
+        policy_id="transfer_adequacy_basis_recorded",
+        check_type="data_transfer",
+        input_data={"basis": basis, "authorised_by": who_authorised},
+        decision="allow",
+        reasoning=(
+            f"An adequacy basis for third-country transfer was recorded by "
+            f"{who_authorised}: {basis}"
+        ),
+    )
+    _rewrite_case_file(
+        {
+            "transfer_adequacy_basis": basis,
+            "transfer_adequacy_authorised_by": who_authorised,
+        },
+        reason="Compliance Officer recorded a third-country transfer basis",
+    )
+    return {"status": "BASIS_RECORDED", "basis": basis, "authorised_by": who_authorised}
 
 
 def close_case(why: str) -> Dict[str, Any]:
@@ -719,6 +853,7 @@ COMPLIANCE_TOOLS = [
     check_case_clocks,
     instruct_holding_letter,
     escalate_to_human,
+    record_transfer_adequacy_basis,
     file_with_regulator,
     close_case,
 ]

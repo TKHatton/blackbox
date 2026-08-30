@@ -16,6 +16,7 @@ success set to false.
 
 from typing import Any, Dict
 
+from ..propagation import label_intake_determination
 from ..stubs.systems import SourceSystemError
 from .runtime import current_run
 
@@ -155,6 +156,12 @@ def record_intake_determination(
         "final_response_due_days": final_response_due_days,
     }
     run.determination = determination
+
+    # Invisible Ink, hop one. Unexamined prose has just become a structured
+    # conclusion. If the agent read vulnerability out of the narrative, special
+    # category data has been extracted from free text, and the label attaches to
+    # that conclusion rather than to any word in it.
+    run.absorb(label_intake_determination(determination))
 
     return {
         "status": "CASE_OPEN",

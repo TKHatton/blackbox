@@ -249,8 +249,12 @@ async def main() -> None:
 
     # ---------------------------------------------------------------
     banner(10, "Remediation. The only agent that can move money.")
-    from blackbox.agents.fleet_tools import execute_remedy, send_customer_letter
-    from blackbox.agents.fleet_tools import suspend_for_appeal_window
+    from blackbox.agents.fleet_tools import (
+        execute_remedy,
+        record_transfer_adequacy_basis,
+        send_customer_letter,
+        suspend_for_appeal_window,
+    )
 
     recorder = Recorder(case_id=CASE_ID, actor="remediation_agent", store=store)
     recorder.set_cause(recorder.events()[-1].event_id)
@@ -273,9 +277,33 @@ async def main() -> None:
         "If you disagree with this outcome you have 30 days to tell us."
     )
     with agent_run(recorder=recorder, systems=systems, wiki_store=wiki):
-        send_customer_letter("final_response", letter, "final response")
+        blocked = await send_customer_letter("final_response", letter, "final response")
+
+    note(f"sent: {blocked['sent']}  <- Invisible Ink refused it")
+    note(f"rule: {blocked['blocked_by']}")
+    note("The letter contains no medical word. It is restricted because it")
+    note("descends from the sentence where she described her diagnosis.")
+
+    # ---------------------------------------------------------------
+    banner(11, "Compliance records a transfer basis. The block was asking for one.")
+    recorder = Recorder(case_id=CASE_ID, actor="compliance_officer", store=store)
+    recorder.set_cause(recorder.events()[-1].event_id)
+    with agent_run(recorder=recorder, systems=systems, wiki_store=wiki):
+        basis = record_transfer_adequacy_basis(
+            basis="Standard contractual clauses with PrintPost, executed 2026-03-01",
+            who_authorised="compliance_lead_okafor",
+        )
+    note(f"{basis['status']} by {basis['authorised_by']}")
+    note("The data is no less sensitive. The decision now has a name against it.")
+
+    # ---------------------------------------------------------------
+    banner(11, "The letter goes out, and the case sleeps.")
+    recorder = Recorder(case_id=CASE_ID, actor="correspondence_agent", store=store)
+    recorder.set_cause(recorder.events()[-1].event_id)
+    with agent_run(recorder=recorder, systems=systems, wiki_store=wiki):
+        sent = await send_customer_letter("final_response", letter, "final response")
         suspend_for_appeal_window()
-    note("Letter sent via PrintPost. Case asleep for the appeal window.")
+    note(f"sent: {sent['sent']}. Case asleep for the appeal window.")
     show_waits(store)
 
     # ---------------------------------------------------------------
@@ -324,10 +352,17 @@ async def main() -> None:
     print(f"   {len(suspends)} suspensions, {len(resumes)} resumptions, "
           f"{len(find_open_suspensions(store))} still open")
 
-    sent = store.list_events_by_type(CASE_ID, EventType.MESSAGE_SENT)
-    leaked = [m for m in sent if "INTERNAL" in m.payload["content"]]
-    print(f"   {len(sent)} message(s) to the customer, "
+    sent_events = store.list_events_by_type(CASE_ID, EventType.MESSAGE_SENT)
+    leaked = [m for m in sent_events if "INTERNAL" in m.payload["content"]]
+    print(f"   {len(sent_events)} message(s) to the customer, "
           f"{len(leaked)} containing internal reasoning")
+
+    from blackbox.taint import blocked_disclosures
+
+    blocks = blocked_disclosures(store, CASE_ID)
+    print(f"   {len(blocks)} disclosure(s) blocked by Invisible Ink")
+    for block in blocks:
+        print(f"      {block['rule']} -> {block['destination']} ({block['destination_region']})")
 
     print("\n   Every decision above has Gemini's reasoning attached to it.")
     print("   Read it with: GET /cases/{case_id}/reasoning\n")

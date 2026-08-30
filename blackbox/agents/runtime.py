@@ -15,6 +15,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, Optional
 
+from ..labels import Label
 from ..recorder import Recorder
 from ..stubs.systems import SourceSystems, get_source_systems
 from ..wiki_store import WikiStore
@@ -38,6 +39,22 @@ class AgentRun:
     suspended_on: Optional[str] = None
     # What the agent produced this turn, for the caller to act on.
     outputs: Dict[str, Any] = field(default_factory=dict)
+    # Invisible Ink. The join of every label this agent has seen this run.
+    #
+    # It only ever grows, and that is correct rather than lazy: a language model
+    # conditions on its whole context, so anything the agent has read could have
+    # shaped anything it writes. Tracking which fact influenced which sentence
+    # would mean trusting the model's own account of its influences, and a model
+    # that under-reports produces a label that is quietly too loose.
+    taint: Label = field(default_factory=Label.public)
+    #: Model the disclosure judge uses. None means the configured Gemini model.
+    #: Tests set this so a gateway decision needs no network call.
+    judge_model: Optional[Any] = None
+
+    def absorb(self, label: Label) -> Label:
+        """Join a new label into what this run carries. Returns the new total."""
+        self.taint = self.taint.join(label)
+        return self.taint
 
     def require_wiki(self) -> WikiStore:
         """The Wiki store, or a clear failure.
@@ -62,12 +79,14 @@ def agent_run(
     recorder: Recorder,
     systems: Optional[SourceSystems] = None,
     wiki_store: Optional[WikiStore] = None,
+    judge_model: Optional[Any] = None,
 ) -> Iterator[AgentRun]:
     """Make a run current for the duration of the block."""
     run = AgentRun(
         recorder=recorder,
         systems=systems or get_source_systems(),
         wiki_store=wiki_store,
+        judge_model=judge_model,
     )
     token = _CURRENT_RUN.set(run)
     try:

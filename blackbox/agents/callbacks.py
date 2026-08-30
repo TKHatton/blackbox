@@ -21,6 +21,8 @@ Callback parameter names are keyword-matched by ADK, so they must not be renamed
 import logging
 from typing import Any, Dict, Optional
 
+from ..labels import Label
+from ..propagation import label_for_tool_result
 from .runtime import current_run
 
 logger = logging.getLogger(__name__)
@@ -81,7 +83,12 @@ def after_model(callback_context: Any, llm_response: Any) -> None:
     else:
         decision = "respond without calling a tool"
 
+    # Invisible Ink. What the model just said is derived from everything it could
+    # see, so the THOUGHT carries the run's accumulated label. This is the hop
+    # where the stamp survives summarisation: the wording changes completely and
+    # the label does not, because it was never attached to the words.
     run.recorder.thought(
+        labels=run.taint.to_dict(),
         reasoning=reasoning or "(model returned no text with this turn)",
         decision=decision,
         # ADK does not surface a calibrated confidence. Recording a made-up number
@@ -106,6 +113,7 @@ def before_tool(tool: Any, args: Dict[str, Any], tool_context: Any) -> None:
 
     tool_name = getattr(tool, "name", str(tool))
     event_id = run.recorder.tool_call(
+        labels=run.taint.to_dict(),
         tool_name=tool_name,
         parameters=dict(args),
         intended_outcome=(getattr(tool, "description", "") or "").strip().split("\n")[0]
@@ -148,11 +156,33 @@ def after_tool(
             "preview": serialized[:2000],
         }
 
-    run.recorder.tool_result(
+    # The label the source system's answer carries. This is where new sensitivity
+    # enters the run: CRM360 returning a vulnerability flag, CoreBank returning a
+    # transaction that names somebody else.
+    result_label = label_for_tool_result(tool_name, tool_response, event_id=None)
+    combined = run.absorb(result_label)
+
+    result_event = run.recorder.tool_result(
+        labels=combined.to_dict(),
         tool_name=tool_name,
         success=success,
         result=result,
         error_message=error_message,
         caused_by=cause,
     )
+
+    # Re-point the provenance at the event that actually recorded it, so the
+    # taint path can name the hop rather than saying "somewhere in this run".
+    if result_label.origins:
+        located = Label.make(
+            result_label.classes,
+            result_label.jurisdictions,
+            [
+                type(o)(o.system, o.field, result_event, o.note)
+                for o in result_label.origins
+            ],
+            result_label.retention,
+        )
+        run.taint = run.taint.join(located)
+
     return None
