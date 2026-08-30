@@ -68,6 +68,13 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("WIKI_COLLECTION", "wiki_pages")
     )
 
+    # Which region this instance runs in. Region pinning is checked against this
+    # on every Wiki read, so setting it wrongly is a compliance problem rather
+    # than a cosmetic one.
+    worker_region: str = Field(
+        default_factory=lambda: os.getenv("WORKER_REGION", "EU").upper()
+    )
+
     # Tracing. Console exporter is the local default; Cloud Trace is used on Cloud Run.
     trace_exporter: str = Field(
         default_factory=lambda: os.getenv("TRACE_EXPORTER", "console").lower()

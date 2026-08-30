@@ -19,6 +19,12 @@ class EventType(str, Enum):
     SUSPEND = "SUSPEND"
     RESUME = "RESUME"
     ESCALATE = "ESCALATE"
+    # Phase 5. The spec's list is a minimum, and a retraction that had to be
+    # recorded as a MEMORY_WRITE would be indistinguishable from an ordinary
+    # rewrite in the audit trail. The whole point is that the Diary still shows a
+    # retraction happened after the content is gone, so it gets its own type.
+    RETRACT = "RETRACT"
+    INVALIDATE = "INVALIDATE"
 
 
 # Payload schemas for each event type
@@ -98,6 +104,38 @@ class EscalatePayload(BaseModel):
     urgency: Literal["low", "medium", "high", "critical"] = Field(..., description="Urgency level")
 
 
+class RetractPayload(BaseModel):
+    """Payload for RETRACT events.
+
+    Records that a fact was withdrawn, and enough about it to prove the
+    withdrawal happened, without restating the content being withdrawn. Storing
+    the retracted values here would defeat the purpose: the Diary is append-only,
+    so anything written into it cannot later be taken out.
+    """
+    subject: str = Field(..., description="Who or what the retraction is about")
+    retracted_fields: list = Field(..., description="Which fields were withdrawn")
+    reason: str = Field(..., description="Why, for example a right to erasure request")
+    requested_by: str = Field(..., description="Who asked")
+    scope: Dict[str, Any] = Field(
+        default_factory=dict, description="What the retraction reaches: pages, events"
+    )
+
+
+class InvalidatePayload(BaseModel):
+    """Payload for INVALIDATE events.
+
+    One entry per derived page the cascade reached. Recording every invalidation
+    separately is what makes the cascade auditable: you can see how far it
+    travelled and by which edge each page was reached.
+    """
+    page_id: str = Field(..., description="The derived page being invalidated")
+    caused_by_retraction: str = Field(..., description="Which retraction reached it")
+    depth: int = Field(..., description="How many edges from the retracted fact")
+    reached_via: str = Field(..., description="The source that pulled this page in")
+    regenerated: bool = Field(..., description="Whether the page was rebuilt")
+    reason: str = Field(..., description="Why this page was affected")
+
+
 # Map event types to their payload schemas
 PAYLOAD_SCHEMAS = {
     EventType.THOUGHT: ThoughtPayload,
@@ -110,6 +148,8 @@ PAYLOAD_SCHEMAS = {
     EventType.SUSPEND: SuspendPayload,
     EventType.RESUME: ResumePayload,
     EventType.ESCALATE: EscalatePayload,
+    EventType.RETRACT: RetractPayload,
+    EventType.INVALIDATE: InvalidatePayload,
 }
 
 

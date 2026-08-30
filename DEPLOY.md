@@ -225,12 +225,34 @@ topic; nothing will wake it otherwise, by design. If the case does not appear in
 whose wake condition could not be read, which is the one way a case can be
 genuinely lost rather than merely waiting.
 
+## Region pinning and where you deploy
+
+`WORKER_REGION` says which region an instance runs in, and it is checked on
+every Wiki read. Set it to match the Cloud Run region you deploy to. An instance
+that claims to be in the EU while running in `us-central1` would pass the check
+and defeat the control, so this value has to be true rather than convenient.
+
+To see the refusal, deploy a second service in a US region with
+`WORKER_REGION=US` and ask it for an EU case:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://YOUR-US-SERVICE-URL/wiki/case:CASE-CMP-2026-0841
+```
+
+It answers 451 with the reasoning, and records the refusal as an event.
+
+To retract a customer record and watch the cascade:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"subject":"CUST-4471","fields":["name","address"],"reason":"right to erasure","requested_by":"customer"}'   https://YOUR-SERVICE-URL/retractions
+```
+
 ## What is deliberately not here
 
 The tiering job from Phase 1.5 is still a stub. It does not copy to BigQuery and
 it does not delete from Firestore, so Firestore will grow. That is fine at these
 volumes and needs fixing before the Filing Cabinet claim is true.
 
-The Eraser is Phase 5. Wiki pages record `derived_from`, so the graph a
-retraction cascade would walk already exists, but nothing walks it yet and no
-region pinning is enforced on where a page is stored.
+The Time Machine is Phase 6. Governance rules are still compiled into the
+agents rather than stored as evaluable expressions, so nothing can yet be
+replayed under an altered policy.

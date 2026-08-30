@@ -1,7 +1,7 @@
 """Tests for BLACKBOX Flight Recorder"""
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from blackbox.schema import (
     Event, EventType, ThoughtPayload, ToolCallPayload,
     PolicyCheckPayload, PAYLOAD_SCHEMAS
@@ -14,7 +14,7 @@ def test_event_schema_creation():
     """Test that we can create a valid event"""
     event = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.THOUGHT,
         payload={
@@ -44,7 +44,7 @@ def test_payload_validation():
     
     event = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.THOUGHT,
         payload=valid_payload,
@@ -68,7 +68,7 @@ def test_invalid_payload_rejected():
     
     event = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.THOUGHT,
         payload=invalid_payload,
@@ -85,7 +85,7 @@ def test_event_serialization():
     """Test that events can be serialized to/from Firestore format"""
     event = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.THOUGHT,
         payload={
@@ -115,7 +115,7 @@ def test_causal_chain():
     # Root event
     root = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.THOUGHT,
         payload={
@@ -133,7 +133,7 @@ def test_causal_chain():
     # Child event
     child = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAW",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.TOOL_CALL,
         payload={

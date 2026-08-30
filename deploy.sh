@@ -27,6 +27,9 @@ set -a; source .env; set +a
 : "${APPROVALS_TOPIC:=blackbox-approvals}"
 : "${REPLIES_TOPIC:=blackbox-customer-replies}"
 : "${GEMINI_MODEL:=gemini-3.5-flash}"
+# Region pinning is checked against this on every Wiki read, so it has to match
+# the region the service actually runs in.
+: "${WORKER_REGION:=EU}"
 
 PROJECT="$GOOGLE_CLOUD_PROJECT"
 REGION="$GOOGLE_CLOUD_LOCATION"
@@ -86,7 +89,7 @@ gcloud run deploy "$SERVICE" \
   --service-account "$RUNTIME_EMAIL" \
   --no-allow-unauthenticated \
   --timeout 600 \
-  --set-env-vars "GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION},FIRESTORE_DATABASE=${FIRESTORE_DATABASE},COMPLAINTS_TOPIC=${COMPLAINTS_TOPIC},APPROVALS_TOPIC=${APPROVALS_TOPIC},REPLIES_TOPIC=${REPLIES_TOPIC},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=TRUE,TRACE_EXPORTER=cloud_trace"
+  --set-env-vars "GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION},FIRESTORE_DATABASE=${FIRESTORE_DATABASE},COMPLAINTS_TOPIC=${COMPLAINTS_TOPIC},APPROVALS_TOPIC=${APPROVALS_TOPIC},REPLIES_TOPIC=${REPLIES_TOPIC},GEMINI_MODEL=${GEMINI_MODEL},WORKER_REGION=${WORKER_REGION},GOOGLE_GENAI_USE_VERTEXAI=TRUE,TRACE_EXPORTER=cloud_trace"
 
 SERVICE_URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)')"
 echo "==> Service URL: $SERVICE_URL"

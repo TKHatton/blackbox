@@ -16,7 +16,8 @@ shaped it, and prove regulated data never reached where it should not.
 | 2. One agent, deployed | Built and verified. Cloud Run deploy blocked on billing, see below. |
 | 3. The fleet wakes itself up | Done. Six agents, suspend and resume, heartbeat. |
 | 4. Invisible Ink | Done. Label lattice, propagation, exit checks, taint path. |
-| 5. The Eraser | Next. |
+| 5. The Eraser | Done. Transitive cascade, regeneration, region pinning. |
+| 6. The Time Machine | Next. |
 
 ### A correction to the earlier Phase 1 claim
 
@@ -31,6 +32,64 @@ than to Cloud Trace.
 
 Phase 2 fixed all of that, because none of it could be built on otherwise. The
 Phase 2 suite exercises the write path end to end against a scripted model.
+
+## What Phase 5 built
+
+Retraction that cascades correctly through everything derived from a fact.
+
+The failure this prevents: you delete the source record, report success, and six
+summaries elsewhere still carry the customer's name, because a model wrote them
+months ago and nobody knows what went into them. BLACKBOX knows, because every
+Wiki page records what it was built from.
+
+**The cascade is transitive.** `derived_from` now holds both event ids and other
+page ids, which makes it a graph rather than a list. The walk reverses those
+edges and travels forward, breadth first, until it stops finding new pages. In
+the demo a retraction against a customer reaches an operating-context page three
+edges away that never mentioned them at all. A one-level cascade would look
+correct on any example small enough to eyeball, so there is a test for depth and
+a test that unrelated pages are left alone.
+
+**Regeneration cannot reintroduce what was retracted.** The regenerator is never
+shown the old page. Not shown it and asked to remove things: not shown it. It
+gets the page's remaining valid sources, and sources that carried the retracted
+fact are excluded even though they stay in the Diary forever. A test asserts the
+old content never enters the prompt, and that `regenerate()` replaces content
+rather than merging with it, because a merge is exactly how a retracted fact
+survives an erasure that reports success.
+
+**Then it is checked anyway.** Regenerated content is scanned for the retracted
+values, and a page that still carries one is redacted rather than published. That
+scan is a keyword check, and Phase 4 is emphatic that a keyword check is not a
+control. It is not the control here either. The control is that the model never
+saw the content; this is the verification that the control held.
+
+**The Diary still records that it happened.** The append-only log cannot have
+content removed from it, which is exactly why the `RETRACT` event records what
+was withdrawn, from where, and by whose request, but never the withdrawn values
+themselves. Every page the cascade reached gets its own `INVALIDATE` event naming
+the depth and the edge it came by.
+
+**Region pinning is enforced, not labelled.** The check lives in the Wiki store's
+read path. A US worker asking for an EU-pinned page gets an exception and no
+page, and the refusal is recorded as an event with its reasoning. Listing is
+guarded too, because a control that guards single reads while letting a caller
+list its way around them is not a control. The Eraser deliberately bypasses the
+region filter: refusing to erase EU data because the machine running the cascade
+sits in the US would be the control working backwards.
+
+### Seeing it
+
+```bash
+BLACKBOX_IN_MEMORY=1 python demo_eraser.py
+```
+
+Eight Wiki pages, three carrying the customer's name. She invokes erasure. Six
+pages are reached across three levels of derivation, five are rewritten from
+their surviving sources, one has nothing left and becomes a statement that it no
+longer holds anything. The two unrelated pages stay at version 1. Then a US
+worker is refused the EU-pinned case, and refused again when it tries listing
+instead.
 
 ## What Phase 4 built
 
@@ -206,6 +265,8 @@ blackbox/
   wiki_store.py        Wiki storage. Rewrites in place, records each rewrite
   tiering.py           Three shelves. Still a stub, see below
   labels.py            The label lattice and the combination rule
+  eraser.py            Retraction, the transitive cascade, regeneration
+  regions.py           Region pinning, enforced in the Wiki read path
   propagation.py       How a label survives a model call
   gateway.py           Exit checks. Rules first, Gemini for the ambiguous
   taint.py             From a blocked action back to the source sentence
@@ -235,10 +296,12 @@ tests/
   test_phase2.py       The agent, recorded end to end
   test_phase3.py       Suspend, resume, wake decisions, routing, gates
   test_phase4.py       The lattice, propagation, the gateway, the taint path
+  test_phase5.py       Cascade transitivity, regeneration, region pinning
   conftest.py          In-memory fixtures, so the suite needs no credentials
   fakes.py             A scripted stand-in for Gemini, tests only
 demo_lifecycle.py      One complaint, start to finish, with time compressed
 demo_invisible_ink.py  The four-hop block, and why no filter could catch it
+demo_eraser.py         One retraction, six derived pages, and a refused border
 ```
 
 ## Running it locally
@@ -255,7 +318,7 @@ against the in-memory backend with a scripted model.
 .venv/Scripts/python -m pytest -q
 ```
 
-117 tests, all passing.
+142 tests, all passing.
 
 To run the service locally against the in-memory store:
 
@@ -282,6 +345,8 @@ See `DEPLOY.md`. Short version: fill in `.env`, then `bash deploy.sh`.
 | `GET /suspensions` | Every wait the fleet is holding, and what would end it |
 | `GET /cases/{id}/blocked` | Disclosures the gateway refused, and why |
 | `GET /taint/{event_id}` | The chain from a blocked action back to its source |
+| `GET /retractions` | Every retraction performed, after the content is gone |
+| `GET /regions/check` | Whether this instance may read a given jurisdiction |
 | `GET /wiki/{page_id}` | What agents read during normal operation |
 | `GET /stubs/...` | The source systems, for inspection |
 

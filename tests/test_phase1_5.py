@@ -1,7 +1,7 @@
 """Tests for BLACKBOX Phase 1.5: Wiki and Three Shelves"""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from blackbox.wiki import WikiPage, WikiUpdate
 from blackbox.wiki_store import WikiStore
 from blackbox.tiering import TieringManager
@@ -25,8 +25,8 @@ class TestWikiSchema:
             },
             derived_from=["event-001", "event-002"],
             version=1,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
         
         assert page.page_id == "wiki-001"
@@ -43,8 +43,8 @@ class TestWikiSchema:
             content={"status": "open"},
             derived_from=["event-001"],
             version=1,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
         
         # Serialize
@@ -66,8 +66,8 @@ class TestWikiSchema:
             content={"status": "open"},
             derived_from=["event-001"],
             version=1,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
         
         # Regenerate with new content
@@ -91,7 +91,7 @@ class TestWikiSchema:
             new_version=2,
             old_derived_from=["event-001"],
             new_derived_from=["event-001", "event-002"],
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             reason="New event arrived",
         )
         
@@ -174,8 +174,8 @@ class TestIntegration:
             content={"status": "open"},
             derived_from=["event-001", "event-002"],
             version=1,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
         
         # Verify derived_from is tracked
@@ -200,7 +200,7 @@ class TestIntegration:
             new_version=2,
             old_derived_from=["event-001"],
             new_derived_from=["event-001", "event-002"],
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             reason="New event arrived",
         )
         
@@ -216,8 +216,8 @@ class TestIntegration:
         # This is a conceptual test - in production, you'd verify that
         # events read from BigQuery + Firestore are correctly ordered
         events = [
-            {"timestamp": datetime.utcnow() - timedelta(days=10), "event_id": "old"},
-            {"timestamp": datetime.utcnow() - timedelta(days=1), "event_id": "recent"},
+            {"timestamp": datetime.now(timezone.utc) - timedelta(days=10), "event_id": "old"},
+            {"timestamp": datetime.now(timezone.utc) - timedelta(days=1), "event_id": "recent"},
         ]
         
         # Sort by timestamp

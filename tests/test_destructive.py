@@ -5,7 +5,7 @@ The guarantee must be structural (methods don't exist), not policed (runtime che
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from blackbox.schema import Event, EventType
 from blackbox.event_store import EventStore
 
@@ -72,7 +72,7 @@ def test_event_object_is_immutable():
     
     event = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.THOUGHT,
         payload={
@@ -101,7 +101,7 @@ def test_event_payload_cannot_be_mutated():
     """Prove that event payloads cannot be mutated"""
     event = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.THOUGHT,
         payload={
@@ -278,7 +278,7 @@ def test_event_validation_is_strict():
     with pytest.raises(ValueError):
         Event(
             event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             actor="test_agent",
             event_type="INVALID_TYPE",  # Not in EventType enum
             payload={},
@@ -295,7 +295,7 @@ def test_payload_schema_enforcement():
     # Try to create a THOUGHT event with missing required fields
     event = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.THOUGHT,
         payload={
@@ -320,7 +320,7 @@ def test_causal_chain_integrity():
     # Create a parent event
     parent = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.THOUGHT,
         payload={
@@ -337,7 +337,7 @@ def test_causal_chain_integrity():
     # Create a child event pointing to parent
     child = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAW",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.TOOL_CALL,
         payload={
@@ -365,7 +365,7 @@ def test_no_event_mutation_via_firestore_dict():
     
     event = Event(
         event_id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         actor="test_agent",
         event_type=EventType.THOUGHT,
         payload={

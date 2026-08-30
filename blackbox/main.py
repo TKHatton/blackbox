@@ -28,7 +28,9 @@ from .event_store import EventStore
 from .fold import fold_events
 from .heartbeat import run_heartbeat
 from .opentelemetry_setup import configure_tracing
+from .eraser import Retraction, retract, retraction_history
 from .recorder import Recorder
+from .regions import RegionRoutingRefused, evaluate_routing
 from .stubs import data
 from .stubs.systems import SourceSystemError, get_source_systems
 from .taint import blocked_disclosures, summarise_path, taint_path
@@ -74,8 +76,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="BLACKBOX",
-    description="The flight recorder for AI agents. Phase 4: Invisible Ink.",
-    version="0.4.0",
+    description="The flight recorder for AI agents. Phase 5: The Eraser.",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -86,10 +88,11 @@ def healthz() -> Dict[str, Any]:
     settings = get_settings()
     return {
         "status": "ok",
-        "phase": "4",
+        "phase": "5",
         "project_id": settings.project_id or None,
         "firestore_database": settings.firestore_database,
         "gemini_model": settings.gemini_model,
+        "worker_region": settings.worker_region,
         "trace_exporter": settings.trace_exporter,
         "in_memory": settings.in_memory,
     }
@@ -299,11 +302,85 @@ def get_taint_path(event_id: str) -> Dict[str, Any]:
 
 @app.get("/wiki/{page_id:path}")
 def get_wiki_page(page_id: str) -> Dict[str, Any]:
-    """A Wiki page: what agents read during normal operation."""
-    page = get_wiki().get_page(page_id)
+    """A Wiki page: what agents read during normal operation.
+
+    Answers 451 when region pinning refuses the read from this instance. That is
+    the honest status for content withheld on legal grounds, and it makes the
+    refusal visible to a caller rather than looking like a server fault.
+    """
+    try:
+        page = get_wiki().get_page(page_id)
+    except RegionRoutingRefused as refused:
+        raise HTTPException(
+            status_code=451,
+            detail={
+                "refused": "region_pinning",
+                "page_region": refused.page_region,
+                "worker_region": refused.worker_region,
+                "reasoning": refused.reasoning,
+            },
+        ) from refused
     if page is None:
         raise HTTPException(status_code=404, detail=f"No Wiki page {page_id}")
     return page.to_firestore_dict()
+
+
+@app.post("/retractions")
+async def create_retraction(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    """Withdraw a fact and cascade the consequences through derived memory.
+
+    The values being withdrawn are used to verify the regenerated pages and are
+    never written to the Diary, which cannot forget.
+    """
+    subject = request.get("subject")
+    if not subject:
+        raise HTTPException(status_code=400, detail="A retraction needs a subject")
+
+    retraction = Retraction(
+        subject=subject,
+        fields=request.get("fields", []),
+        reason=request.get("reason", "Not stated"),
+        requested_by=request.get("requested_by", "unknown"),
+        values=request.get("values", []),
+    )
+    result = await retract(
+        retraction, store=get_store(), wiki_store=get_wiki(),
+        regenerate=request.get("regenerate", True),
+    )
+    return {
+        "retraction_id": result.retraction_id,
+        "subject": result.subject,
+        "retract_event_id": result.retract_event_id,
+        "pages_reached": result.pages_reached,
+        "max_depth": result.max_depth,
+        "directly_affected": result.directly_affected,
+        "invalidated": result.invalidated,
+        "regenerated": result.regenerated,
+        "held_invalid": result.held_invalid,
+    }
+
+
+@app.get("/retractions")
+def list_retractions() -> Dict[str, Any]:
+    """Every retraction performed.
+
+    The content is gone from the Wiki. This is the proof it was there and that
+    somebody withdrew it, which is what an auditor asks for.
+    """
+    return {"retractions": retraction_history(get_store())}
+
+
+@app.get("/regions/check")
+def check_region_routing(page_id: str, jurisdiction: str = "") -> Dict[str, Any]:
+    """Would this instance be allowed to read a page pinned to that jurisdiction?"""
+    settings = get_settings()
+    decision = evaluate_routing(page_id, jurisdiction or None, settings.worker_region)
+    return {
+        "allowed": decision.allowed,
+        "page_region": decision.page_region,
+        "worker_region": decision.worker_region,
+        "reasoning": decision.reasoning,
+    }
 
 
 # ----------------------------------------------------------------------
