@@ -34,6 +34,25 @@ class AppendOnlyBackend(ABC):
     ) -> List[Dict[str, Any]]:
         """Read documents matching equality filters, optionally ordered and capped."""
 
+    @abstractmethod
+    def evict(self, collection: str, doc_id: str) -> None:
+        """Remove a document from *this shelf only*.
+
+        This is not a delete in the sense the append-only guarantee forbids, and
+        the distinction is worth being precise about.
+
+        The Diary is append-only as a *record*: no event is ever altered, and no
+        event ever stops existing. Eviction moves an event between shelves. After
+        it, the event is still readable, still byte-identical, still part of the
+        log; it simply lives in BigQuery rather than Firestore.
+
+        The danger is obvious, so the guard is not politeness. ``EventStore`` does
+        not expose this and never will: an agent has no way to reach it. The only
+        caller is ``TieringManager``, which refuses to evict an event it has not
+        first read back from the warm shelf and compared field by field. Copy,
+        verify, then evict. Never evict and hope.
+        """
+
 
 class DocumentAlreadyExists(RuntimeError):
     """Raised when a write would overwrite an existing event.
@@ -58,6 +77,9 @@ class InMemoryBackend(AppendOnlyBackend):
     def get(self, collection: str, doc_id: str) -> Optional[Dict[str, Any]]:
         doc = self._data.get(collection, {}).get(doc_id)
         return dict(doc) if doc is not None else None
+
+    def evict(self, collection: str, doc_id: str) -> None:
+        self._data.get(collection, {}).pop(doc_id, None)
 
     def query(
         self,
@@ -113,6 +135,9 @@ class FirestoreBackend(AppendOnlyBackend):
     def get(self, collection: str, doc_id: str) -> Optional[Dict[str, Any]]:
         doc = self.client.collection(collection).document(doc_id).get()
         return doc.to_dict() if doc.exists else None
+
+    def evict(self, collection: str, doc_id: str) -> None:
+        self.client.collection(collection).document(doc_id).delete()
 
     def query(
         self,

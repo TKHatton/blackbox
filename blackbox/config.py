@@ -68,6 +68,17 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("WIKI_COLLECTION", "wiki_pages")
     )
 
+    # Tiering. How long an event stays on each shelf before moving outward.
+    hot_ttl_days: int = Field(
+        default_factory=lambda: int(os.getenv("HOT_TTL_DAYS", "7"))
+    )
+    cold_ttl_days: int = Field(
+        default_factory=lambda: int(os.getenv("COLD_TTL_DAYS", "365"))
+    )
+    warehouse_bucket: str = Field(
+        default_factory=lambda: os.getenv("WAREHOUSE_BUCKET", "")
+    )
+
     # Which region this instance runs in. Region pinning is checked against this
     # on every Wiki read, so setting it wrongly is a compliance problem rather
     # than a cosmetic one.

@@ -292,11 +292,31 @@ The response carries Gemini's categorised comparison and the promotion decision.
 A candidate that behaved incorrectly or more riskily than the live version is
 refused, and the reasons say which cases and why.
 
-## What is deliberately not here
+## Watching the shelves
 
-The tiering job from Phase 1.5 is still a stub. It does not copy to BigQuery and
-it does not delete from Firestore, so Firestore will grow. That is fine at these
-volumes and needs fixing before the Filing Cabinet claim is true.
+The number that matters is the Desk's. It should stay roughly flat as the system
+runs rather than climbing forever:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://YOUR-SERVICE-URL/shelves
+```
+
+The tiering job runs daily at 03:17 and moves events older than `HOT_TTL_DAYS`
+from Firestore into BigQuery, then events older than `COLD_TTL_DAYS` from
+BigQuery into Cloud Storage as Parquet. To run it now:
+
+```bash
+gcloud scheduler jobs run blackbox-tiering --location us-central1
+```
+
+It copies, reads each event back to confirm it arrived intact, and only then
+removes it from Firestore. The response reports anything that failed
+verification; those events stay on the Desk rather than being lost.
+
+Set `WAREHOUSE_BUCKET` in `.env` before deploying, or cold storage stays
+disabled and events accumulate in BigQuery instead.
+
+## What is deliberately not here
 
 The Immune System is Phase 8. Nothing yet generates adversarial attacks against
 the fleet or accumulates successful ones into a regression corpus.

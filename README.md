@@ -12,7 +12,7 @@ shaped it, and prove regulated data never reached where it should not.
 |---|---|
 | 0. Define the work | Done. See `WORKFLOW.md`. |
 | 1. The Flight Recorder | Done, and the write path now actually runs. See the note below. |
-| 1.5. The Wiki and three shelves | Wiki done. Tiering is still a stub. |
+| 1.5. The Wiki and three shelves | Done. Tiering rewritten: copy, verify, evict. |
 | 2. One agent, deployed | Built and verified. Cloud Run deploy blocked on billing, see below. |
 | 3. The fleet wakes itself up | Done. Six agents, suspend and resume, heartbeat. |
 | 4. Invisible Ink | Done. Label lattice, propagation, exit checks, taint path. |
@@ -34,6 +34,35 @@ than to Cloud Trace.
 
 Phase 2 fixed all of that, because none of it could be built on otherwise. The
 Phase 2 suite exercises the write path end to end against a scripted model.
+
+## The tiering fix
+
+Phase 1.5 shipped with `tier_old_events()` printing a line and returning zero. It
+neither copied to BigQuery nor deleted from Firestore, which is the failure mode
+that phase's own spec names: a copy without a delete, so Firestore keeps growing
+anyway. It is now implemented.
+
+**Copy, verify, then evict.** Every eviction is preceded by reading the event back
+from the shelf it was supposedly written to and comparing it field by field
+against the copy still in Firestore. An event that does not read back identically
+stays where it is and the mismatch is reported. So a botched run leaves Firestore
+too big, which costs money, rather than losing an event, which cannot be undone.
+
+**What append-only means here.** The Diary is append-only as a *record*: no event
+is altered and none stops existing. Tiering changes an event's address, not its
+content. `EventStore` still has no delete and no update, and an agent has no route
+to one; the eviction capability lives on the backend, is called only by the
+tiering manager, and is gated on the verification above.
+
+**Reading is transparent across shelves.** The strongest test is not that events
+move. It is that folding a case produces byte-identical state before and after
+tiering, whichever shelf now holds it.
+
+Shelf 3 writes Parquet partitioned by date, so a six month query scans six months.
+
+Verified against live infrastructure: 4 events moved Firestore to BigQuery and
+read back byte-identical, then BigQuery to Cloud Storage as Parquet and folded to
+the same state from cold storage.
 
 ## What Phase 7 built
 
@@ -372,6 +401,7 @@ blackbox/
   wiki.py              Wiki page schema, with derived_from
   wiki_store.py        Wiki storage. Rewrites in place, records each rewrite
   tiering.py           Three shelves. Still a stub, see below
+  shelves.py           The warm and cold shelves, with in-memory doubles
   stunt.py             Shadow isolation: a world a candidate cannot write through
   shadow_service.py    Running a candidate, judging it, gating its promotion
   policy.py            Governance rules as CEL expressions, not code
@@ -413,6 +443,7 @@ tests/
   test_phase5.py       Cascade transitivity, regeneration, region pinning
   test_phase6.py       Policies as data, state as-of, fixtures, divergence
   test_phase7.py       Write isolation, judged comparison, the promotion gate
+  test_tiering.py      The three shelves, and that moving loses nothing
   conftest.py          In-memory fixtures, so the suite needs no credentials
   fakes.py             A scripted stand-in for Gemini, tests only
 demo_lifecycle.py      One complaint, start to finish, with time compressed
@@ -436,7 +467,7 @@ against the in-memory backend with a scripted model.
 .venv/Scripts/python -m pytest -q
 ```
 
-196 tests, all passing.
+214 tests, all passing.
 
 To run the service locally against the in-memory store:
 
@@ -469,6 +500,8 @@ See `DEPLOY.md`. Short version: fill in `.env`, then `bash deploy.sh`.
 | `GET /cases/{id}/as-of/{event_id}` | The world as it stood at a past moment |
 | `POST /replay` | Rewind, alter a rule, and report what would have differed |
 | `POST /shadow` | Run a candidate version in shadow and judge its promotion |
+| `GET /shelves` | How many events sit on each shelf |
+| `POST /tiering/run` | Move aged events outward through the shelves |
 | `GET /wiki/{page_id}` | What agents read during normal operation |
 | `GET /stubs/...` | The source systems, for inspection |
 
@@ -512,11 +545,6 @@ names a model.
 
 ## Known gaps
 
-- **Tiering is not implemented.** `tiering.tier_old_events()` prints a line and
-  returns zero. It neither copies to BigQuery nor deletes from Firestore, so the
-  Filing Cabinet is empty and Firestore grows without limit. Phase 1.5's own
-  failure mode list names this exact shape. It needs building before any claim
-  about flat Firestore document counts is true.
 - **CommsVault job records live in process memory.** The wake condition moved
   into the Diary in Phase 3, so no case is lost when an instance recycles. What
   is still in memory is the stub's own map of job ids to ready times, so a

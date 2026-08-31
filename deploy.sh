@@ -30,6 +30,10 @@ set -a; source .env; set +a
 # Region pinning is checked against this on every Wiki read, so it has to match
 # the region the service actually runs in.
 : "${WORKER_REGION:=EU}"
+# Tiering. The Desk keeps recent events; older ones move outward.
+: "${HOT_TTL_DAYS:=7}"
+: "${COLD_TTL_DAYS:=365}"
+: "${WAREHOUSE_BUCKET:=}"
 
 PROJECT="$GOOGLE_CLOUD_PROJECT"
 REGION="$GOOGLE_CLOUD_LOCATION"
@@ -66,6 +70,9 @@ gcloud iam service-accounts create "$INVOKER_SA" \
 for ROLE in \
   roles/datastore.user \
   roles/aiplatform.user \
+  roles/bigquery.dataEditor \
+  roles/bigquery.jobUser \
+  roles/storage.objectAdmin \
   roles/pubsub.publisher \
   roles/cloudtrace.agent \
   roles/logging.logWriter
@@ -89,7 +96,7 @@ gcloud run deploy "$SERVICE" \
   --service-account "$RUNTIME_EMAIL" \
   --no-allow-unauthenticated \
   --timeout 600 \
-  --set-env-vars "GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION},FIRESTORE_DATABASE=${FIRESTORE_DATABASE},COMPLAINTS_TOPIC=${COMPLAINTS_TOPIC},APPROVALS_TOPIC=${APPROVALS_TOPIC},REPLIES_TOPIC=${REPLIES_TOPIC},GEMINI_MODEL=${GEMINI_MODEL},WORKER_REGION=${WORKER_REGION},GOOGLE_GENAI_USE_VERTEXAI=TRUE,TRACE_EXPORTER=cloud_trace"
+  --set-env-vars "GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION},FIRESTORE_DATABASE=${FIRESTORE_DATABASE},COMPLAINTS_TOPIC=${COMPLAINTS_TOPIC},APPROVALS_TOPIC=${APPROVALS_TOPIC},REPLIES_TOPIC=${REPLIES_TOPIC},GEMINI_MODEL=${GEMINI_MODEL},WORKER_REGION=${WORKER_REGION},HOT_TTL_DAYS=${HOT_TTL_DAYS},COLD_TTL_DAYS=${COLD_TTL_DAYS},WAREHOUSE_BUCKET=${WAREHOUSE_BUCKET},GOOGLE_GENAI_USE_VERTEXAI=TRUE,TRACE_EXPORTER=cloud_trace"
 
 SERVICE_URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)')"
 echo "==> Service URL: $SERVICE_URL"
@@ -150,10 +157,22 @@ echo "==> Cloud Scheduler: the inbound poller"
 # Wakes on a timer and publishes anything new. Nobody presses a button.
 make_scheduler_job blackbox-intake-poller "*/10 * * * *" "/ingest/poll"
 
+echo "==> Warehouse bucket"
+if [[ -n "$WAREHOUSE_BUCKET" ]]; then
+  gcloud storage buckets create "gs://${WAREHOUSE_BUCKET}"     --location "$REGION" 2>/dev/null || echo "    bucket exists"
+else
+  echo "    WAREHOUSE_BUCKET unset, cold storage disabled"
+fi
+
 echo "==> Cloud Scheduler: the fleet heartbeat"
 # The beat that gives suspended agents a chance to evaluate their own wake
 # conditions. It starts no work of its own.
 make_scheduler_job blackbox-heartbeat "*/5 * * * *" "/heartbeat"
+
+echo "==> Cloud Scheduler: the tiering job"
+# Moves aged events off the Desk so Firestore stays flat. Daily is plenty:
+# the hot window is measured in days, not minutes.
+make_scheduler_job blackbox-tiering "17 3 * * *" "/tiering/run"
 
 cat <<EOM
 
@@ -168,6 +187,7 @@ Deployed.
                 reply     -> /pubsub/customer-reply
   Scheduler     blackbox-intake-poller, every 10 minutes
                 blackbox-heartbeat,     every 5 minutes
+                blackbox-tiering,       daily at 03:17
 
 The fleet is now running on its own. The poller publishes the seeded complaints,
 the Intake Agent opens a case for each, and the heartbeat gives suspended agents

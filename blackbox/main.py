@@ -39,6 +39,7 @@ from .shadow_service import (
     run_shadow,
 )
 from .stunt import AgentVersion
+from .tiering import TieringManager
 from .timemachine import state_as_of
 from .regions import RegionRoutingRefused, evaluate_routing
 from .stubs import data
@@ -59,6 +60,21 @@ def get_store() -> EventStore:
         settings = get_settings()
         _stores["events"] = EventStore(project_id=settings.project_id)
     return _stores["events"]
+
+
+def get_tiering() -> TieringManager:
+    """One TieringManager for the process."""
+    if "tiering" not in _stores:
+        settings = get_settings()
+        _stores["tiering"] = TieringManager(
+            project_id=settings.project_id,
+            event_store=get_store(),
+            hot_ttl_days=settings.hot_ttl_days,
+            cold_ttl_days=settings.cold_ttl_days,
+            bucket_name=settings.warehouse_bucket or None,
+            in_memory=settings.in_memory,
+        )
+    return _stores["tiering"]
 
 
 def get_wiki() -> WikiStore:
@@ -379,6 +395,42 @@ def list_retractions() -> Dict[str, Any]:
     somebody withdrew it, which is what an auditor asks for.
     """
     return {"retractions": retraction_history(get_store())}
+
+
+@app.post("/tiering/run")
+def run_tiering() -> Dict[str, Any]:
+    """Cloud Scheduler target. Moves aged events outward through the shelves.
+
+    Copies to BigQuery, reads each event back to confirm it arrived intact, and
+    only then removes it from Firestore. An event that fails verification stays
+    on the Desk and is reported, because Firestore staying too big is a cost
+    problem while a lost event is not recoverable.
+    """
+    tiering = get_tiering()
+    try:
+        tiering.ensure_schema()
+    except Exception as exc:
+        logger.warning("Could not ensure the BigQuery schema: %s", exc)
+
+    filing = tiering.tier_to_filing_cabinet()
+    warehouse = tiering.archive_to_warehouse()
+
+    return {
+        "filing_cabinet": filing.to_dict(),
+        "warehouse": warehouse.to_dict(),
+        "shelf_counts": tiering.shelf_counts(),
+    }
+
+
+@app.get("/shelves")
+def shelf_counts() -> Dict[str, Any]:
+    """How many events sit on each shelf.
+
+    The number that matters is the Desk's. It should stay roughly flat as the
+    system runs rather than climbing forever, which is the whole point of Phase
+    1.5 and the thing the earlier stub failed to deliver.
+    """
+    return get_tiering().shelf_counts()
 
 
 @app.post("/shadow")

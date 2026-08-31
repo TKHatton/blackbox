@@ -19,5 +19,6 @@ setup(
         "python-ulid>=1.1.0",
         "python-dotenv>=1.0.0",
         "cel-python>=0.1.5",
+        "pyarrow>=15.0.0",
     ],
 )

@@ -109,7 +109,11 @@ class TestTiering:
     """Test three-shelf tiering system"""
     
     def test_tiering_manager_initialization(self):
-        """Test TieringManager initialization"""
+        """Test TieringManager initialization.
+
+        The dataset id moved onto the warm shelf when tiering was rewritten to
+        actually move events, so this asserts against where it lives now.
+        """
         event_store = EventStore(project_id="test-project")
         tiering = TieringManager(
             project_id="test-project",
@@ -117,49 +121,35 @@ class TestTiering:
             hot_ttl_days=7,
             cold_ttl_days=365,
         )
-        
+
         assert tiering.hot_ttl_days == 7
         assert tiering.cold_ttl_days == 365
-        assert tiering.dataset_id == "test-project.blackbox_events"
-        # Clients should be None until accessed (lazy initialization)
-        assert tiering._bq_client is None
-        assert tiering._storage_client is None
-    
-    def test_bigquery_schema_creation(self):
-        """Test BigQuery schema creation"""
-        event_store = EventStore(project_id="test-project")
-        tiering = TieringManager(
-            project_id="test-project",
-            event_store=event_store,
-        )
-        
-        # This should not raise an error
-        # (In actual test, it would try to create the dataset/table)
-        # We're just testing the method exists and has the right signature
-        assert hasattr(tiering, "ensure_bigquery_schema")
-    
-    def test_tier_old_events_method_exists(self):
-        """Test that tier_old_events method exists"""
-        event_store = EventStore(project_id="test-project")
-        tiering = TieringManager(
-            project_id="test-project",
-            event_store=event_store,
-        )
-        
-        assert hasattr(tiering, "tier_old_events")
-        assert callable(tiering.tier_old_events)
-    
-    def test_archive_to_cold_storage_method_exists(self):
-        """Test that archive_to_cold_storage method exists"""
-        event_store = EventStore(project_id="test-project")
-        tiering = TieringManager(
-            project_id="test-project",
-            event_store=event_store,
-            bucket_name="test-bucket",
-        )
-        
-        assert hasattr(tiering, "archive_to_cold_storage")
-        assert callable(tiering.archive_to_cold_storage)
+        # Shelves are built lazily, so constructing a manager needs no credentials.
+        assert tiering._warm is None
+        assert tiering._cold is None
+
+    def test_the_warm_shelf_knows_its_dataset(self):
+        from blackbox.shelves import BigQueryWarmShelf
+
+        shelf = BigQueryWarmShelf(project_id="test-project")
+        assert shelf.dataset_id == "test-project.blackbox_events"
+        assert shelf.table_id == "test-project.blackbox_events.events"
+        assert shelf._client is None, "the client should be lazy"
+
+    def test_tiering_moves_events_rather_than_only_copying(self):
+        """The Phase 1.5 failure mode, asserted directly.
+
+        The earlier implementation printed a line and returned zero. Full
+        coverage of the movement logic lives in test_tiering.py; this is the
+        guard that the stub never comes back.
+        """
+        import inspect
+
+        from blackbox import tiering as tiering_module
+
+        source = inspect.getsource(tiering_module.TieringManager.tier_to_filing_cabinet)
+        assert "evict" in source, "tiering copies without deleting"
+        assert "events_match" in source, "tiering evicts without verifying"
 
 
 class TestIntegration:
