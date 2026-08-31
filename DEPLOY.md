@@ -217,6 +217,14 @@ access explicitly after deploying:
 `gcloud run services add-iam-policy-binding blackbox --region us-central1 --member=allUsers --role=roles/run.invoker`.
 Re-run this after every `deploy.sh`, since a fresh deploy resets the policy.
 
+**Note on what that grant actually opens.** Cloud Run's invoker role is
+service-wide, not per-route. Granting `allUsers` makes every path public,
+including action endpoints like `/replay` and `/faults/arm`, not just the UI
+at `/`. That is a deliberate hackathon-submission tradeoff so judges can click
+Replay in the browser with no token, not a production posture. A production deployment would front the UI's read paths with a public path
+and keep action routes behind the invoker service account, likely via a
+reverse proxy or two separate services.
+
 **Permission denied on Firestore.** The runtime service account needs
 `roles/datastore.user`, which `deploy.sh` binds. IAM changes can take a minute to
 take effect.
