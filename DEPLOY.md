@@ -200,13 +200,22 @@ complaint that caused them.
 
 ## If something fails
 
-**The model id is rejected.** `GEMINI_MODEL` defaults to `gemini-2.5-flash`,
-confirmed working against this project's Vertex AI endpoint in `us-central1`.
-`gemini-3.5-flash` and every 3.x variant tried returned 404 NOT_FOUND on this
-project, so the default was set to what actually resolves rather than what the
-build spec names. If a newer id becomes available in your project or region,
-set `GEMINI_MODEL` to it and redeploy. Nothing else in the codebase names a
-model.
+**The model id is rejected.** `gemini-3.5-flash` (and every other 3.x variant)
+404s against Vertex AI's *regional* endpoints, including `us-central1`. It
+resolves on the **global** endpoint. `GEMINI_MODEL` defaults to
+`gemini-3.5-flash` and `GEMINI_LOCATION` defaults to `global`, a setting kept
+separate from `GOOGLE_CLOUD_LOCATION` (the Cloud Run/Scheduler region) since
+Cloud Run itself must still deploy to a named region, not "global". If you hit
+a 404 on a different project, check `GEMINI_LOCATION` before assuming the
+model id itself is wrong.
+
+**The Split Screen returns 403 Forbidden in a browser.** `deploy.sh` deploys
+with `--no-allow-unauthenticated` by design (nothing should reach the fleet's
+action endpoints except the Scheduler/Pub-Sub service account). That also
+locks the human-facing UI at `/`. To demo it in a browser, grant public read
+access explicitly after deploying:
+`gcloud run services add-iam-policy-binding blackbox --region us-central1 --member=allUsers --role=roles/run.invoker`.
+Re-run this after every `deploy.sh`, since a fresh deploy resets the policy.
 
 **Permission denied on Firestore.** The runtime service account needs
 `roles/datastore.user`, which `deploy.sh` binds. IAM changes can take a minute to

@@ -19,7 +19,13 @@ class Settings(BaseModel):
 
     # Google Cloud
     project_id: str = Field(default_factory=lambda: os.getenv("GOOGLE_CLOUD_PROJECT", ""))
-    location: str = Field(default_factory=lambda: os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"))
+    # This is the Vertex AI *model* location, deliberately a separate variable
+    # from GOOGLE_CLOUD_LOCATION (which deploy.sh also uses as the Cloud
+    # Run/Scheduler region, e.g. us-central1). gemini-3.5-flash only resolves
+    # on Vertex AI's "global" endpoint; regional endpoints 404 for it. Reusing
+    # GOOGLE_CLOUD_LOCATION for both would force the whole deployment region
+    # to "global", which Cloud Run does not accept.
+    location: str = Field(default_factory=lambda: os.getenv("GEMINI_LOCATION", "global"))
 
     # Gemini. The spec allows either Vertex AI or the Gemini API; both are Gemini,
     # and no other model provider appears anywhere in this codebase.
@@ -27,7 +33,7 @@ class Settings(BaseModel):
     # Vertex AI is the default and what production uses. The Gemini API path exists
     # because Vertex AI inference requires billing on the project, and the Gemini
     # API free tier does not, so development is not blocked while billing is sorted.
-    gemini_model: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    gemini_model: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-3.5-flash"))
     use_vertex: bool = Field(
         default_factory=lambda: os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "TRUE").upper() == "TRUE"
     )

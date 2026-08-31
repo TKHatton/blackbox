@@ -733,15 +733,16 @@ Four endpoints cause work, and all four are called by machines:
 
 None of them is meant for a person.
 
-## A deviation from the spec, and why
+## A regional gotcha, and how it was found
 
-The build spec requires Gemini 3.5 Flash or newer. This project's Vertex AI
-endpoint does not serve any 3.x model id: nine variants were tried in
-`us-central1`, and only `gemini-2.5-flash` and `gemini-2.5-pro` resolved. `GEMINI_MODEL` defaults to `gemini-2.5-flash`
-because that is what this project can actually reach, not because 2.5 satisfies
-the letter of the requirement. If a 3.x id becomes available, changing
-`GEMINI_MODEL` and redeploying is the whole fix; nothing else in the codebase
-names a model.
+The build spec requires Gemini 3.5 Flash or newer. Every 3.x model id 404s
+against Vertex AI's regional endpoints (nine variants tried in `us-central1`).
+The fix was not a different model, it was a different endpoint:
+`gemini-3.5-flash` resolves on Vertex's **global** endpoint, not on a regional
+one. `GEMINI_MODEL` defaults to `gemini-3.5-flash` and `GEMINI_LOCATION`
+defaults to `global`, deliberately kept as a separate setting from
+`GOOGLE_CLOUD_LOCATION` (which is the Cloud Run/Scheduler region, `us-central1`,
+and stays regional since Cloud Run does not deploy to "global").
 
 ## Hard constraints, and where they are held
 
@@ -779,7 +780,6 @@ Stated plainly, because a reviewer will find them anyway.
   not keep between revisions. Moving it to Cloud Storage is small work.
 - **The red team and the shadow runs have no scheduler job.** Both cost model
   calls, and neither needs to run unattended to be demonstrated.
-- **`gemini-3.5-flash` is not what runs.** See the deviation note above.
 
 ## Domain
 
