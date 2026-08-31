@@ -41,6 +41,8 @@ recording silently, that is correct, the narration fills it.
    ```
    $env:TOKEN=$(gcloud auth print-identity-token)
    ```
+7. Open `demo-assets/blocked-letter.html` in a third tab, for Take 4. Just double
+   click the file, it needs no server and no network.
 
 ---
 
@@ -68,15 +70,25 @@ recording silently, that is correct, the narration fills it.
 
 This carries the longest narration block. Move slowly and deliberately.
 
+**Important, checked live just before recording:** the app itself does not show
+the letter's actual words anywhere. Clicking Trace shows *why* it was blocked
+(the reasoning, the rule, the sources), not the letter text. For the "here is
+that letter" line to have something to point at, open
+`demo-assets/blocked-letter.html` in a second browser tab ahead of time (double
+click the file, or run a local server and open it, either works since it needs
+no network). Switch to that tab for the "no medical word in it" beat, then back.
+
 1. Click the **Invisible Ink** tab.
 2. Click **Trace** on the EU case (`CASE-CMP-2026-0841`).
 3. Hold 3-4 seconds on hop 1, where the customer's complaint text with the cancer
    mention is visible.
 4. Scroll slowly down through the hops. Do not rush this, the narration is walking
    through it with you.
-5. Land on the final blocked hop and hold 4-5 seconds. The letter text should be
-   readable, so a viewer can confirm for themselves there is no medical word in it.
-6. Trace the cursor down the label column showing the tag carried across hops. Hold
+5. Land on the final blocked hop and hold 2-3 seconds on the block reasoning.
+6. Switch to the `blocked-letter.html` tab. Hold 4-5 seconds so the letter is
+   readable and a viewer can confirm for themselves there is no medical word in
+   it. Switch back to the app.
+7. Trace the cursor down the label column showing the tag carried across hops. Hold
    2 seconds on the blocked state.
 
 ## Take 5: The Time Machine (ACTIVE, ~10s)

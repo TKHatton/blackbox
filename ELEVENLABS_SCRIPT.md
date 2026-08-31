@@ -77,7 +77,9 @@ Footage: Cloud Run logs, scrolled to the Vertex AI line.
 
 ## 4. Invisible Ink, the one to remember (STATIC, the star, let it run)
 
-Footage: Invisible Ink tab, Trace clicked, hop one, then the blocked final hop.
+Footage: Invisible Ink tab, Trace clicked, hop one, the blocked final hop, then
+a switch to the blocked-letter.html tab for the letter itself (the app's own
+trace view shows why it was blocked, not the letter's words).
 
 > If you only watch one part of this, watch this one. It is called Invisible Ink.
 >

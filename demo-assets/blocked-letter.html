@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Blocked letter</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #e8e5df;
+    font-family: Georgia, "Times New Roman", serif;
+    padding: 40px 20px;
+    display: flex;
+    justify-content: center;
+  }
+  .sheet {
+    background: #fdfdfb;
+    width: 720px;
+    max-width: 100%;
+    padding: 56px 64px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+    color: #1a1a1a;
+    line-height: 1.7;
+    font-size: 16px;
+  }
+  .stamp {
+    display: inline-block;
+    border: 3px solid #b91c1c;
+    color: #b91c1c;
+    font-family: Arial, sans-serif;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 2px;
+    padding: 6px 14px;
+    transform: rotate(-4deg);
+    margin-bottom: 28px;
+  }
+  .body p { margin-bottom: 16px; }
+  .sig { margin-top: 8px; }
+  .why {
+    margin-top: 40px;
+    background: #fef2f2;
+    border-left: 4px solid #b91c1c;
+    padding: 18px 22px;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: #3f1414;
+  }
+  .why b { display: block; margin-bottom: 6px; font-size: 14px; color: #7f1d1d; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="stamp">NOT SENT &middot; BLOCKED BY BLACKBOX</div>
+  <div class="body">
+    <p>Dear Customer,</p>
+    <p>We are writing to give you our final decision regarding your complaint about the fees applied to your account ending in 8214.</p>
+    <p>We have fully upheld your complaint. We are very sorry that we did not support you properly when you contacted us on July 9, 2026.</p>
+    <p>At that time, you shared with us that you were dealing with difficult personal and financial circumstances. We should have recorded this information immediately on our systems to prevent further fees from being charged. Because we failed to do this, arrears management fees were incorrectly applied to your account.</p>
+    <p>We understand how stressful and difficult this situation must have been for you, and we are truly sorry for the extra distress our oversight caused during such a challenging time.</p>
+    <p>To help make things right, we have credited a total of 255.01 to your account. This amount is made up of:</p>
+    <p style="padding-left:20px;">A full refund of the three arrears management fees, totaling 105.00.<br>
+    A compensatory payment of 150.01 for the distress and inconvenience this has caused you.</p>
+    <p>This money has already been transferred to your account.</p>
+    <p>If you are not satisfied with our response, you have the right to take your complaint to the Financial Services and Pensions Ombudsman (FSPO) in Ireland. You can find more information or submit a complaint on their website at www.fspo.ie, or by contacting them directly.</p>
+    <p>Thank you for your patience while we investigated this for you. We wish you all the very best.</p>
+    <p class="sig">Sincerely,<br>Customer Resolutions Team</p>
+  </div>
+  <div class="why">
+    <b>Why BLACKBOX refused to send this</b>
+    Special category data originating in Ireland would be transferred to the United States, a third country with no adequacy basis recorded for this transfer. The letter above contains zero health vocabulary. It is restricted because of where its content is derived from, not because of what it says: the customer's original complaint mentioned a cancer diagnosis, and that label traveled through two Gemini rewrites into this letter, invisibly.
+  </div>
+</div>
+</body>
+</html>

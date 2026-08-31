@@ -21,8 +21,11 @@ Screen: the "what the fleet is waiting on" panel. Held still, no clicking.
 Screen: Cloud Run logs, the Vertex AI line.
 
 **4. S | "If you only watch one part of this, watch this one..."**
-Screen: Invisible Ink, Trace clicked, hop one, slow scroll, land on the blocked
-letter and hold. The most important shot in the video, move slowly.
+Screen: Invisible Ink, Trace clicked, hop one, slow scroll, land on the block
+reasoning, then switch to the `blocked-letter.html` tab for "here is that
+letter." The app itself never shows the letter's words, only why it was
+blocked, that second tab is where the words are. Most important shot in the
+video, move slowly.
 
 **5. A | "Every rule in this system is stored as data..."**
 Screen: Split screen tab, threshold set to 100, Replay clicked, both panels land.
