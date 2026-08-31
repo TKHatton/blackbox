@@ -28,7 +28,7 @@ flowchart TB
         POL["Policy engine<br/>CEL, swappable"]
     end
 
-    GEM["Gemini 2.5 Flash<br/>Vertex AI"]
+    GEM["Gemini 3.5 Flash<br/>Vertex AI"]
 
     subgraph stubs["Source systems (stubs)"]
         CB["CoreBank"]

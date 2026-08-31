@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #ffffff; font-family: "Segoe UI", -apple-system, Roboto, Arial, sans-serif; }
+  .page { width: 1500px; padding: 40px 44px 34px; background: #ffffff; }
+
+  .title { text-align: center; margin-bottom: 6px; }
+  .title h1 { font-size: 40px; color: #0f172a; letter-spacing: -0.5px; }
+  .title h1 .dim { color: #64748b; font-weight: 400; }
+  .title .sub { font-size: 16px; color: #475569; margin-top: 10px; line-height: 1.5; }
+  .title .sub b { color: #0f172a; }
+
+  .layer { border-radius: 14px; padding: 18px 22px 20px; margin-top: 16px; }
+  .layer-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  .layer-num {
+    font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
+    padding: 4px 10px; border-radius: 20px; color: #fff;
+  }
+  .layer-title { font-size: 19px; font-weight: 700; color: #0f172a; }
+  .layer-note { font-size: 13.5px; color: #475569; margin-left: auto; font-style: italic; }
+
+  /* Layer 1 */
+  .l1 { background: #f0f7ff; border: 1.5px solid #bfdbfe; }
+  .l1 .layer-num { background: #2563eb; }
+  .flow { display: flex; align-items: stretch; gap: 10px; }
+  .node {
+    background: #fff; border: 1.5px solid #93c5fd; border-radius: 10px;
+    padding: 12px 12px; text-align: center; flex: 1;
+  }
+  .node .ic { font-size: 21px; }
+  .node .nm { font-size: 14.5px; font-weight: 700; color: #0f172a; margin-top: 3px; }
+  .node .ds { font-size: 11.5px; color: #475569; line-height: 1.42; margin-top: 4px; }
+  .arw { display: flex; align-items: center; color: #60a5fa; font-size: 20px; font-weight: 700; }
+
+  .agents { flex: 2.1; background: #fff; border: 2px solid #2563eb; border-radius: 10px; padding: 12px; text-align: center; }
+  .agents .nm { font-size: 15px; font-weight: 700; color: #0f172a; }
+  .agents .roles { font-size: 12px; color: #1e40af; margin-top: 6px; line-height: 1.6; font-weight: 600; }
+  .agents .ds { font-size: 11.5px; color: #475569; margin-top: 6px; line-height: 1.42; }
+
+  .gem { flex: 1.15; background: #faf5ff; border: 2px solid #9333ea; border-radius: 10px; padding: 12px; text-align: center; }
+  .gem .nm { font-size: 14.5px; font-weight: 700; color: #6b21a8; }
+  .gem .ds { font-size: 11.5px; color: #475569; margin-top: 4px; line-height: 1.42; }
+
+  .bridge {
+    margin-top: 13px; background: #fff; border: 1.5px dashed #93c5fd;
+    border-radius: 9px; padding: 9px 14px; font-size: 12.5px; color: #1e3a8a; text-align: center;
+  }
+  .bridge b { color: #0f172a; }
+
+  /* connector */
+  .conn { text-align: center; padding: 9px 0 3px; }
+  .conn .ln { font-size: 21px; color: #94a3b8; line-height: 1; }
+  .conn .tx { font-size: 13px; color: #334155; margin-top: 3px; }
+  .conn .tx b { color: #0f172a; }
+
+  /* Layer 2 */
+  .l2 { background: #fffbeb; border: 2px solid #fbbf24; }
+  .l2 .layer-num { background: #d97706; }
+  .two { display: flex; gap: 12px; }
+  .book { flex: 1; background: #fff; border: 2px solid #f59e0b; border-radius: 10px; padding: 13px 15px; }
+  .book .hd { font-size: 16px; font-weight: 700; color: #92400e; }
+  .book .tag { font-size: 11px; color: #b45309; font-weight: 600; letter-spacing: .4px; margin-top: 2px; }
+  .book .ds { font-size: 12.5px; color: #334155; margin-top: 7px; line-height: 1.5; }
+  .book .ds b { color: #0f172a; }
+
+  .shelves { display: flex; gap: 9px; margin-top: 13px; }
+  .shelf { flex: 1; background: #fff; border: 1.5px solid #fcd34d; border-radius: 9px; padding: 10px; text-align: center; }
+  .shelf .ic { font-size: 17px; }
+  .shelf .nm { font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 2px; }
+  .shelf .ds { font-size: 11.5px; color: #475569; margin-top: 3px; line-height: 1.4; }
+  .shelfarw { display: flex; align-items: center; color: #d97706; font-size: 17px; font-weight: 700; }
+  .verify { margin-top: 10px; text-align: center; font-size: 12.5px; color: #92400e; }
+  .verify b { color: #0f172a; }
+
+  /* Layer 3 */
+  .l3 { background: #f0fdf4; border: 1.5px solid #86efac; }
+  .l3 .layer-num { background: #16a34a; }
+  .caps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; }
+  .cap { background: #fff; border: 1.5px solid #86efac; border-radius: 10px; padding: 12px 13px; }
+  .cap .hd { font-size: 15px; font-weight: 700; color: #0f172a; }
+  .cap .ds { font-size: 12.3px; color: #334155; margin-top: 5px; line-height: 1.48; }
+
+  /* frontend */
+  .fe { margin-top: 16px; background: #ecfeff; border: 2px solid #06b6d4; border-radius: 14px; padding: 15px 20px; display: flex; align-items: center; gap: 18px; }
+  .fe .lft { flex: 1.15; }
+  .fe .hd { font-size: 18px; font-weight: 700; color: #0f172a; }
+  .fe .ds { font-size: 12.8px; color: #334155; margin-top: 5px; line-height: 1.5; }
+  .fe .tabs { flex: 1.5; display: flex; flex-wrap: wrap; gap: 6px; }
+  .tab { background: #fff; border: 1.5px solid #67e8f9; border-radius: 20px; padding: 5px 11px; font-size: 12px; color: #0e7490; font-weight: 600; }
+  .fe .ways { flex: 1; }
+  .way { font-size: 12px; color: #155e75; line-height: 1.55; }
+  .way b { color: #0f172a; }
+
+  .legend { margin-top: 16px; border-top: 1.5px solid #e2e8f0; padding-top: 12px; display: flex; justify-content: center; gap: 26px; flex-wrap: wrap; }
+  .li { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #334155; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; border: 2px solid; }
+  .foot { text-align: center; font-size: 12px; color: #64748b; margin-top: 11px; line-height: 1.5; }
+  .foot b { color: #0f172a; }
+</style>
+</head>
+<body>
+<div class="page" id="page">
+
+  <div class="title">
+    <h1>BLACKBOX <span class="dim">: The Flight Recorder for AI Agents</span></h1>
+    <div class="sub">
+      An <b>unerasable recording layer</b> that any AI agent system can sit on top of. Because every decision and its reasoning is recorded,<br>
+      you can rewind it, replay it under different rules, trace where a fact came from, and prove data never went where it shouldn't.<br>
+      <span style="color:#64748b">Shown here running a <b>regulated bank complaint workflow</b>, chosen because it is the hardest case: statutory deadlines, health data, three jurisdictions.<br>
+      The same layer fits medical triage, insurance claims, loan decisions, hiring, or any agent whose decisions someone may later have to answer for.</span>
+    </div>
+  </div>
+
+  <!-- LAYER 1 -->
+  <div class="layer l1">
+    <div class="layer-head">
+      <span class="layer-num">LAYER 1</span>
+      <span class="layer-title">The work runs itself</span>
+      <span class="layer-note">no person starts anything, ever</span>
+    </div>
+    <div class="flow">
+      <div class="node">
+        <div class="ic">&#9200;</div>
+        <div class="nm">Cloud Scheduler</div>
+        <div class="ds">Google's timer. Wakes the system on a clock, not on a click.</div>
+      </div>
+      <div class="arw">&rarr;</div>
+      <div class="node">
+        <div class="ic">&#128236;</div>
+        <div class="nm">Pub/Sub</div>
+        <div class="ds">Google's message queue. A message landing here is what makes an agent run.</div>
+      </div>
+      <div class="arw">&rarr;</div>
+      <div class="agents">
+        <div class="ic" style="font-size:21px">&#129302;</div>
+        <div class="nm">Six Agents &middot; Google ADK</div>
+        <div class="roles">Intake &middot; Evidence &middot; Assessment<br>Remediation &middot; Correspondence &middot; Compliance</div>
+        <div class="ds">Each one reasons, decides, and hands the case on. A gateway checks everything before it leaves.</div>
+      </div>
+      <div class="arw">&harr;</div>
+      <div class="gem">
+        <div class="ic" style="font-size:21px">&#10024;</div>
+        <div class="nm">Gemini 3.5 Flash</div>
+        <div class="ds">on <b>Vertex AI</b>, Google's enterprise AI platform. Every reasoning step is a live model call.</div>
+      </div>
+      <div class="arw">&rarr;</div>
+      <div class="node">
+        <div class="ic">&#127974;</div>
+        <div class="nm">Bank Systems</div>
+        <div class="ds">Accounts, CRM, call archive, print vendor, regulator portal.</div>
+      </div>
+    </div>
+    <div class="bridge">
+      &#128564; <b>Agents that wait, without staying awake.</b> The call archive answers in days, not seconds. So the agent writes down what would wake it, and stops completely. A heartbeat checks later and resumes it. <b>The wake-up condition is a recorded fact, never something held in memory</b>, so a server restart cannot lose a case.
+    </div>
+  </div>
+
+  <div class="conn">
+    <div class="ln">&darr;</div>
+    <div class="tx">every action, every tool call, and <b>every reason the model gave</b> is written down as it happens</div>
+  </div>
+
+  <!-- LAYER 2 -->
+  <div class="layer l2">
+    <div class="layer-head">
+      <span class="layer-num">LAYER 2</span>
+      <span class="layer-title">The recording layer: this is the product</span>
+      <span class="layer-note">one way to write. no edit. no delete.</span>
+    </div>
+    <div class="two">
+      <div class="book">
+        <div class="hd">&#128214; The Diary</div>
+        <div class="tag">THE PERMANENT RECORD</div>
+        <div class="ds">Every event, forever, in order, with what caused what. <b>Nothing is ever edited or removed</b>: the code has exactly one write method and no delete, and the database itself rejects an overwrite. This is what makes everything in Layer 3 possible.</div>
+      </div>
+      <div class="book">
+        <div class="hd">&#128209; The Wiki</div>
+        <div class="tag">THE WORKING MEMORY</div>
+        <div class="ds">Short, current summaries, rewritten as facts change. <b>Agents read this, never the Diary.</b> A system that reread its entire history to think would work in a demo and collapse in month nine.</div>
+      </div>
+    </div>
+    <div class="shelves">
+      <div class="shelf"><div class="ic">&#128193;</div><div class="nm">Firestore</div><div class="ds"><b>Recent.</b> The last week, instantly available.</div></div>
+      <div class="shelfarw">&rarr;</div>
+      <div class="shelf"><div class="ic">&#128202;</div><div class="nm">BigQuery</div><div class="ds"><b>Searchable.</b> Older records, still queryable in seconds.</div></div>
+      <div class="shelfarw">&rarr;</div>
+      <div class="shelf"><div class="ic">&#128230;</div><div class="nm">Cloud Storage</div><div class="ds"><b>Archive.</b> Years of history, cheap to keep.</div></div>
+    </div>
+    <div class="verify">&#128274; Records move outward as they age, but <b>only after being read back and confirmed identical</b>. A record is never deleted from one shelf until it is proven to exist on the next.</div>
+  </div>
+
+  <div class="conn">
+    <div class="ln">&darr;</div>
+    <div class="tx">because that record is <b>complete and impossible to tamper with</b>, all of this becomes possible</div>
+  </div>
+
+  <!-- LAYER 3 -->
+  <div class="layer l3">
+    <div class="layer-head">
+      <span class="layer-num">LAYER 3</span>
+      <span class="layer-title">What the recording unlocks</span>
+      <span class="layer-note">none of this works without Layer 2</span>
+    </div>
+    <div class="caps">
+      <div class="cap">
+        <div class="hd">&#129525; Invisible Ink</div>
+        <div class="ds">Sensitive information is tagged and <b>the tag follows it everywhere</b>, even after the AI rewrites it in its own words. Catches a leak in a letter containing no sensitive word at all.</div>
+      </div>
+      <div class="cap">
+        <div class="hd">&#129529; The Eraser</div>
+        <div class="ds">Someone asks to be forgotten. Delete the fact, and <b>every summary built from it is rebuilt without it</b>, even three steps downstream. The AI is never shown what it is erasing.</div>
+      </div>
+      <div class="cap">
+        <div class="hd">&#9194; The Time Machine</div>
+        <div class="ds">Rewind a finished case, <b>change one rule, and watch it play out differently</b>. See who a policy change would have affected before you ship it.</div>
+      </div>
+      <div class="cap">
+        <div class="hd">&#127917; The Stunt Double</div>
+        <div class="ds">Test a new version of an agent <b>against genuine past cases with every action faked</b>. Gemini judges whether it was safer or riskier, and blocks the release if it was riskier.</div>
+      </div>
+      <div class="cap">
+        <div class="hd">&#128737; The Immune System</div>
+        <div class="ds">Gemini <b>writes attacks against this system</b>. Anything that works is kept forever and retested on every future version. Success means a rule was actually broken, not that the AI sounded flustered.</div>
+      </div>
+      <div class="cap">
+        <div class="hd">&#128165; The Crash Test</div>
+        <div class="ds">Break things on purpose while it runs. When two systems <b>disagree about the same number, the fleet refuses to guess</b> and escalates to a human instead.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRONTEND -->
+  <div class="fe">
+    <div class="lft">
+      <div class="hd">&#128421; The Split Screen</div>
+      <div class="ds">The live web interface, served from the same address as everything else. Every panel shows live data from the running system, never a placeholder.</div>
+    </div>
+    <div class="tabs">
+      <span class="tab">Live fleet</span>
+      <span class="tab">Split screen</span>
+      <span class="tab">Invisible Ink</span>
+      <span class="tab">The Eraser</span>
+      <span class="tab">Time Machine</span>
+      <span class="tab">Immune system</span>
+    </div>
+    <div class="ways">
+      <div class="way">&uarr; <b>Reads</b> from all three layers, live</div>
+      <div class="way">&darr; <b>Sends work back:</b> clicking Replay runs a genuine what-if against the recording</div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="li"><span class="sw" style="background:#2563eb;border-color:#2563eb"></span> Autonomous workflow (the example)</div>
+    <div class="li"><span class="sw" style="background:#d97706;border-color:#d97706"></span> The recording layer (the product)</div>
+    <div class="li"><span class="sw" style="background:#16a34a;border-color:#16a34a"></span> Capabilities it unlocks</div>
+    <div class="li"><span class="sw" style="background:#9333ea;border-color:#9333ea"></span> Gemini 3.5 Flash on Vertex AI</div>
+    <div class="li"><span class="sw" style="background:#06b6d4;border-color:#06b6d4"></span> Live interface</div>
+  </div>
+
+  <div class="foot">
+    Built on Google Cloud: Cloud Run, Cloud Scheduler, Pub/Sub, Firestore, BigQuery, Cloud Storage, Cloud Trace, and Vertex AI &middot; agents built with Google ADK<br>
+    <b>278 tests run with no cloud account and no network</b>, so any of this can be verified in about two minutes.
+  </div>
+
+</div>
+</body>
+</html>
