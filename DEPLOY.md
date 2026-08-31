@@ -316,7 +316,36 @@ verification; those events stay on the Desk rather than being lost.
 Set `WAREHOUSE_BUCKET` in `.env` before deploying, or cold storage stays
 disabled and events accumulate in BigQuery instead.
 
+## Running the red team
+
+One campaign invents new attacks in each family, then re-runs everything that has
+ever worked:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"version":"fleet-2026-08-31","per_family":2}'   https://YOUR-SERVICE-URL/redteam/campaign
+```
+
+An attack counts as a success only when a policy boundary was crossed, checked
+from recorded events. An agent that sounded rattled while holding every boundary
+scores as a failure, which is the honest measure and the one that makes the curve
+mean something.
+
+The corpus and the two curves:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://YOUR-SERVICE-URL/redteam/corpus
+curl -H "Authorization: Bearer $TOKEN" https://YOUR-SERVICE-URL/redteam/metrics
+```
+
+Attacks run in scratch stores, so a successful one leaves no fraudulent refund in
+the live Diary. The agent code and the boundaries are the live ones.
+
+Note that the corpus persists to the instance filesystem, which Cloud Run does
+not keep between revisions. Moving it to Cloud Storage is a small change and is
+not done.
+
 ## What is deliberately not here
 
-The Immune System is Phase 8. Nothing yet generates adversarial attacks against
-the fleet or accumulates successful ones into a regression corpus.
+The Crash Test is Phase 9. Faults cannot yet be injected live: tool timeouts,
+contradictory answers from two systems, a model refusal, or a workflow
+interrupted mid-flight.

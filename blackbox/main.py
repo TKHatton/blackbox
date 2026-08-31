@@ -38,6 +38,8 @@ from .shadow_service import (
     record_shadow_run,
     run_shadow,
 )
+from .immune_service import ImmuneMetrics, run_campaign
+from .redteam import AttackFamily, RegressionCorpus
 from .stunt import AgentVersion
 from .tiering import TieringManager
 from .timemachine import state_as_of
@@ -102,8 +104,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="BLACKBOX",
-    description="The flight recorder for AI agents. Phase 7: The Stunt Double.",
-    version="0.7.0",
+    description="The flight recorder for AI agents. Phase 8: The Immune System.",
+    version="0.8.0",
     lifespan=lifespan,
 )
 
@@ -114,7 +116,7 @@ def healthz() -> Dict[str, Any]:
     settings = get_settings()
     return {
         "status": "ok",
-        "phase": "7",
+        "phase": "8",
         "project_id": settings.project_id or None,
         "firestore_database": settings.firestore_database,
         "gemini_model": settings.gemini_model,
@@ -395,6 +397,85 @@ def list_retractions() -> Dict[str, Any]:
     somebody withdrew it, which is what an auditor asks for.
     """
     return {"retractions": retraction_history(get_store())}
+
+
+_immune: Dict[str, Any] = {}
+
+
+def get_corpus() -> RegressionCorpus:
+    """The regression corpus, which only ever grows."""
+    if "corpus" not in _immune:
+        from pathlib import Path
+
+        _immune["corpus"] = RegressionCorpus(Path("/tmp/blackbox-corpus.json"))
+    return _immune["corpus"]
+
+
+def get_immune_metrics() -> ImmuneMetrics:
+    if "metrics" not in _immune:
+        _immune["metrics"] = ImmuneMetrics()
+    return _immune["metrics"]
+
+
+@app.post("/redteam/campaign")
+async def redteam_campaign(request: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
+    """Run one red team pass: invent new attacks, then re-run the whole corpus.
+
+    An attack counts as a success only when a policy boundary was crossed,
+    checked from recorded events. An agent that sounded rattled while holding
+    every boundary is scored a failure, which is the honest measure.
+
+    Deliberately its own endpoint. Attacks run in scratch stores, so a successful
+    one leaves no fraudulent refund in the live Diary.
+    """
+    version = request.get("version") or "unversioned"
+    per_family = int(request.get("per_family", 1))
+    families = request.get("families")
+    selected = [AttackFamily(f) for f in families] if families else None
+
+    corpus = get_corpus()
+    campaign = await run_campaign(
+        version=version,
+        corpus=corpus,
+        families=selected,
+        per_family=per_family,
+        systems=get_source_systems(),
+    )
+    corpus.save()
+    get_immune_metrics().record(campaign)
+    return campaign.to_dict()
+
+
+@app.get("/redteam/corpus")
+def redteam_corpus() -> Dict[str, Any]:
+    """Every attack that has ever worked, kept forever."""
+    corpus = get_corpus()
+    return {
+        "size": corpus.size,
+        "attacks": [
+            {
+                "attack_id": entry.attack.attack_id,
+                "family": entry.attack.family.value,
+                "payload": entry.attack.payload,
+                "first_succeeded_at": entry.first_succeeded_at.isoformat(),
+                "boundaries": entry.boundaries,
+                "runs": entry.history,
+            }
+            for entry in corpus.entries.values()
+        ],
+    }
+
+
+@app.get("/redteam/metrics")
+def redteam_metrics() -> Dict[str, Any]:
+    """Attack success rate and corpus size over time.
+
+    The two curves only mean something together: a falling rate against a
+    growing corpus is hardening, while a falling rate against a fixed set of
+    attacks just means somebody patched those attacks.
+    """
+    metrics = get_immune_metrics()
+    return {"points": metrics.points, "chart": metrics.render()}
 
 
 @app.post("/tiering/run")

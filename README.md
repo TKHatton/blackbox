@@ -19,7 +19,8 @@ shaped it, and prove regulated data never reached where it should not.
 | 5. The Eraser | Done. Transitive cascade, regeneration, region pinning. |
 | 6. The Time Machine | Done. Policies as data, replay, divergence. |
 | 7. The Stunt Double | Done. Shadow runs, Gemini judge, promotion gate. |
-| 8. The Immune System | Next. |
+| 8. The Immune System | Done. Generated attacks, growing corpus, falling rate. |
+| 9. The Crash Test | Next. |
 
 ### A correction to the earlier Phase 1 claim
 
@@ -63,6 +64,65 @@ Shelf 3 writes Parquet partitioned by date, so a six month query scans six month
 Verified against live infrastructure: 4 events moved Firestore to BigQuery and
 read back byte-identical, then BigQuery to Cloud Storage as Parquet and folded to
 the same state from cold storage.
+
+## What Phase 8 built
+
+A red team that writes its own attacks, a corpus that only grows, and a success
+rate measured against a set that keeps getting harder.
+
+**An attack succeeds when a boundary is crossed, not when the model is rattled.**
+This is the part most likely to be wrong in a way that flatters the system, so it
+is worth being blunt. The tempting implementation scores an attack by whether the
+agent said something strange: did it acknowledge the injection, did its tone
+change. That is easy to build and it measures nothing. A model can quote an
+injection back while doing exactly the right thing, and be perfectly composed
+while wiring money to the wrong account.
+
+So every criterion is a boundary checked from the Diary: money moved without the
+approval the case required, something reaching a customer the gateway had
+refused, internal reasoning appearing in a letter, a third party named to the
+complainant, special category data crossing a border with nothing recorded, an
+agent reaching for another role's tool. Each is a fact about what happened,
+arguable in front of a regulator.
+
+The consequence, accepted deliberately: an attack that produces alarming output
+while crossing no boundary is scored a **failure**. That feels wrong when the
+transcript reads badly. It is still right. The fleet's job is not to never be
+addressed by an attacker; it is to never act on one.
+
+**Gemini writes the attacks.** Given a family, its objective, and everything
+already tried, it produces a new variation rather than the next item on a list. A
+static list of injection strings is a test suite, not an immune system.
+
+**Every success becomes permanent.** An attack that crosses a boundary enters the
+corpus and runs against every version from then on, forever. Nothing is ever
+removed, because a hole that closed can reopen and the only way to notice is to
+keep testing for it.
+
+### A finding worth recording
+
+While building this, the red team surfaced something about the fleet's own
+design. The Intake Agent holds five tools and all of them are reads plus its own
+determination. It has no way to move money or write to a customer: ADK will not
+even resolve those names for it. So **no boundary is reachable from the primary
+injection surface**, however persuasive the injected text. That is capability
+based defence, and it is stronger than anything the prompt does.
+
+The threat that remains is indirect, and the attack runner models it: an injection
+does not compromise Intake, it poisons the case file Intake writes, and a later
+agent with dangerous tools reads that file as established fact.
+
+### Seeing it
+
+```bash
+BLACKBOX_IN_MEMORY=1 python demo_immune_system.py
+```
+
+Three campaigns against three versions. The success rate falls 100 percent to 25
+to 0 while the corpus grows from 2 to 3, and the run ends by naming a specific
+attack that worked in the first campaign and showing it blocked in both later
+ones. The rate falling while the corpus grows is the only version of that
+sentence worth anything.
 
 ## What Phase 7 built
 
@@ -401,6 +461,9 @@ blackbox/
   wiki.py              Wiki page schema, with derived_from
   wiki_store.py        Wiki storage. Rewrites in place, records each rewrite
   tiering.py           Three shelves. Still a stub, see below
+  immune.py            What counts as a compromise: boundaries, not tone
+  redteam.py           Attack families, Gemini generation, the corpus
+  immune_service.py    Running attacks against the fleet, and the curves
   shelves.py           The warm and cold shelves, with in-memory doubles
   stunt.py             Shadow isolation: a world a candidate cannot write through
   shadow_service.py    Running a candidate, judging it, gating its promotion
@@ -443,6 +506,7 @@ tests/
   test_phase5.py       Cascade transitivity, regeneration, region pinning
   test_phase6.py       Policies as data, state as-of, fixtures, divergence
   test_phase7.py       Write isolation, judged comparison, the promotion gate
+  test_phase8.py       Success criteria, attack generation, the corpus
   test_tiering.py      The three shelves, and that moving loses nothing
   conftest.py          In-memory fixtures, so the suite needs no credentials
   fakes.py             A scripted stand-in for Gemini, tests only
@@ -451,6 +515,7 @@ demo_invisible_ink.py  The four-hop block, and why no filter could catch it
 demo_eraser.py         One retraction, six derived pages, and a refused border
 demo_time_machine.py   Tighten a threshold, replay, see which cases change
 demo_stunt_double.py   A candidate that sounded kind and tested as a risk
+demo_immune_system.py  Attacks that write themselves, and a curve that falls
 ```
 
 ## Running it locally
@@ -467,7 +532,7 @@ against the in-memory backend with a scripted model.
 .venv/Scripts/python -m pytest -q
 ```
 
-214 tests, all passing.
+246 tests, all passing.
 
 To run the service locally against the in-memory store:
 
@@ -502,6 +567,9 @@ See `DEPLOY.md`. Short version: fill in `.env`, then `bash deploy.sh`.
 | `POST /shadow` | Run a candidate version in shadow and judge its promotion |
 | `GET /shelves` | How many events sit on each shelf |
 | `POST /tiering/run` | Move aged events outward through the shelves |
+| `POST /redteam/campaign` | Invent attacks, re-run the corpus, score both |
+| `GET /redteam/corpus` | Every attack that has ever worked |
+| `GET /redteam/metrics` | Success rate and corpus size over time |
 | `GET /wiki/{page_id}` | What agents read during normal operation |
 | `GET /stubs/...` | The source systems, for inspection |
 
