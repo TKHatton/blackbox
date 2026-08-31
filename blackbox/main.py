@@ -17,12 +17,14 @@ the autonomous path.
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from fastapi import Body, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from . import approvals, ingest
+from .agents.fleet_service import advance_case
 from .agents.intake_service import case_id_for, run_intake
 from .config import get_settings
 from .event_store import EventStore
@@ -908,6 +910,83 @@ async def debug_intake(complaint_ref: str) -> Dict[str, Any]:
     return await run_intake(
         complaint, store=store, wiki_store=get_wiki(), systems=get_fleet_systems()
     )
+
+
+@app.post("/debug/advance/{case_id}")
+async def debug_advance(case_id: str) -> Dict[str, Any]:
+    """Give the coordinator one tick over an open, non-suspended case.
+
+    In the autonomous path, a case advances when the heartbeat's compliance
+    review picks it up (a deadline coming due) or when a suspension wakes. A
+    freshly opened case with a deadline weeks out matches neither, so it would
+    otherwise sit at Intake until something else nudges it. This is that nudge,
+    for confirming a deployment behaves as documented. The autonomous path does
+    not call this, and removing it would not change how the fleet behaves once
+    a case is already in motion.
+
+    One call is one hop: the coordinator decides one next agent and hands off,
+    same as one heartbeat tick would. A case with several hops ahead of it, like
+    Invisible Ink's cross-border trace, needs this called more than once.
+    """
+    return await advance_case(
+        case_id=case_id,
+        store=get_store(),
+        wiki_store=get_wiki(),
+        systems=get_fleet_systems(),
+        trigger="debug: manual advance",
+    )
+
+
+@app.post("/debug/heartbeat_fast_forward")
+async def debug_heartbeat_fast_forward(days: int = 10) -> Dict[str, Any]:
+    """Run a heartbeat beat as of some days in the future, not the wall clock.
+
+    ``run_heartbeat`` already accepts ``now`` so a demonstration can compress a
+    wait without faking the mechanism; nothing wired this to an endpoint. Wake
+    conditions like CommsVault's real turnaround (days) are genuine, not
+    theatrical, so there is no honest way to make one fire on the actual clock
+    inside a recording window. This evaluates the same real condition, just
+    checked as of a later moment, exactly what the production heartbeat would
+    do days from now. The autonomous path calls ``/heartbeat`` with no override
+    and never this endpoint.
+    """
+    future = datetime.now(timezone.utc) + timedelta(days=days)
+    return await run_heartbeat(
+        store=get_store(), wiki_store=get_wiki(), systems=get_fleet_systems(), now=future
+    )
+
+
+@app.post("/debug/commsvault/reseed_job")
+def debug_reseed_commsvault_job(
+    job_id: str, customer_id: str, ready_at: str
+) -> Dict[str, Any]:
+    """Put a CommsVault job back into memory after an instance recycled.
+
+    CommsVault job state lives only in the process, documented as a known gap:
+    a recycled instance answers "unknown job" to a job another instance created,
+    and the case stays correctly suspended rather than resuming without records.
+    That is the safe failure, but it means a suspend event survives a redeploy
+    and its underlying job does not. This reconstructs a lost job from the exact
+    values the original SUSPEND event recorded (job_id, ready_at) plus the
+    customer_id the case is actually about, so the same real CommsVault wait can
+    resolve instead of hanging forever. Nothing on the autonomous path calls
+    this or needs to.
+    """
+    try:
+        ready = datetime.fromisoformat(ready_at)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Bad ready_at: {exc}") from exc
+
+    # get_fleet_systems() wraps the real stub estate in a fault-injection proxy
+    # whose __getattr__ treats any attribute as a method call. Reach through
+    # ._target to the actual CommsVault singleton to touch its job dict.
+    commsvault = get_fleet_systems().commsvault._target
+    commsvault._jobs[job_id] = {
+        "customer_id": customer_id,
+        "reason": "reseeded after instance recycle",
+        "ready_at": ready,
+    }
+    return {"reseeded": job_id, "customer_id": customer_id, "ready_at": ready.isoformat()}
 
 
 @app.get("/suspensions")

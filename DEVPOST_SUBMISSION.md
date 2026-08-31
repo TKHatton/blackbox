@@ -56,29 +56,44 @@ BLACKBOX is the layer that makes those questions answerable. Not a better agent,
 recording layer any agent system can sit on top of, plus everything that becomes
 possible once the recording is complete and impossible to tamper with.
 
+Two things sit at the center of it. **The Diary** is that recording: an
+append-only event log, one write method, no update, no delete. **The Wiki** is
+condensed working memory built from the Diary, rewritten as facts change, the
+only thing the agents themselves ever read. Everything else in this project is
+something the Diary makes possible that would otherwise be a promise, not a fact.
+
 #### What it does
 
-An unerasable event log sits underneath a six-agent fleet handling a regulated bank
-complaint workflow, chosen as the proving ground because it is the hardest
-believable case: statutory deadlines, health information, customers across three
-jurisdictions. The same recording layer applies to medical triage, insurance
-claims, lending, or hiring, anywhere a machine's decision is something a person may
-later have to answer for.
+The Diary sits underneath a six-agent fleet handling a regulated bank complaint
+workflow, chosen as the proving ground because it is the hardest believable case:
+statutory deadlines, health information, customers across three jurisdictions.
+The same recording layer applies to medical triage, insurance claims, lending, or
+hiring, anywhere a machine's decision is something a person may later have to
+answer for.
 
-Because every action and its reasoning is written down and never altered, the
-system can:
+Because every action and its reasoning is written down and never altered:
 
-- **Rewind** a closed case, change one governance rule, and see who it would have
-  affected differently
-- **Trace** any output back to the exact data that shaped it, across model calls
-  and paraphrase
-- **Prove** sensitive information never reached somewhere it shouldn't, catching a
-  leak in a letter that contains none of the sensitive words itself
-- **Retract** a fact and cascade that retraction through every summary derived from
-  it, without ever showing a regenerating model the retracted content
-- **Run unattended**, waking itself on a schedule rather than a button, including
-  suspending for days waiting on a slow external system and resuming with full
-  context rebuilt from the log
+- **Invisible Ink** blocks a data leak in a letter that contains none of the
+  sensitive words itself, because a sensitivity tag travels with information
+  through paraphrase and rewriting, not by matching keywords
+- **The Time Machine** rewinds a closed case, changes one governance rule as
+  data rather than code, and replays it to show exactly who a policy change
+  would have affected differently, without touching anything live
+- **The Eraser** retracts a fact and cascades that retraction through every
+  summary derived from it, even several steps downstream, without ever showing
+  a regenerating model the retracted content
+- **The Stunt Double** shadow-runs a candidate agent version against genuine past
+  cases with every write faked, and an independent Gemini judgment blocks
+  promotion if the new version is riskier than what's already live
+- **The Immune System** lets Gemini write its own adversarial attacks against
+  the live agent code, keeps every attack that ever worked in a corpus that only
+  grows, and counts a success only when an actual policy boundary was crossed
+- **The Crash Test** injects faults the agents themselves have to read and react
+  to, so a genuine contradiction between two systems of record can never be
+  retried away, only escalated
+- The fleet **runs unattended**, waking itself on a schedule rather than a
+  button, including suspending for days waiting on a slow external system and
+  resuming with full context rebuilt from the Wiki
 
 #### How I built it
 
@@ -96,7 +111,7 @@ policy-as-data replay engine (CEL expressions) that rebuilds state from the log
 rather than reading current state, isolated from production by capability, not a
 flag; a shadow-evaluation system that stubs every write and uses Gemini as an
 independent judge before promoting a new agent version; a red-team system where
-Gemini generates adversarial attacks against the real agent code, scored strictly
+Gemini generates adversarial attacks against the deployed agent code, scored strictly
 by whether a policy boundary was crossed; and fault injection that surfaces faults
 as tool results the agents themselves read, so a contradiction cannot be retried
 away.
@@ -118,14 +133,14 @@ foundational event-store phase complete on the strength of tests that never
 actually exercised the write path, only asserted method signatures existed.
 Finding and fixing that, and rewriting a tiering job that had shipped as a no-op,
 mattered more than any later phase, because six later phases depend entirely on
-the recording being real.
+the recording being trustworthy.
 
 #### What I learned
 
 Decide what a failure means before building the thing that detects it. The
 tempting failure criterion, whether the model "sounded" wrong, measures nothing.
 The honest one, whether a policy boundary was actually crossed, is what caught
-real issues in the red-team system. And prefer capability to discipline: every
+genuine issues in the red-team system. And prefer capability to discipline: every
 guarantee in this system holds because the dangerous action is unreachable, no
 client for a replay to call, no tool registered for an agent that shouldn't have
 one, not because the code remembers not to take it.
@@ -264,7 +279,7 @@ A post with the hackathon's required hashtag, once posted.
   cannot be retried away
 - Fully autonomous trigger chain: Cloud Scheduler to Pub/Sub to the fleet, with
   genuine multi-day suspend/resume, no manual step anywhere
-- A live single-page UI (the Split Screen) with six views, all reading real data
+- A live single-page UI (the Split Screen) with six views, all reading live data
   from the running service
 
 ### Technologies used

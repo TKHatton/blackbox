@@ -55,9 +55,8 @@ Footage: Live fleet tab, reasoning already scrolling, hover a card, then the mod
 >
 > Nobody started this. A scheduler wakes the system on a timer, and drops a message
 > into a queue called Pub/Sub. A message landing there is what makes an agent run.
-> That matters more than it sounds: it means there is no button anywhere, and no
-> person in the loop, which is what separates a system that works from a demo that
-> needs babysitting.
+> There is no button anywhere, and no person in the loop. This whole fleet has been
+> running on its own since the moment it deployed.
 
 ## 2. Agents that sleep (STATIC, hold on the suspended case)
 
@@ -80,58 +79,61 @@ Footage: Cloud Run logs, scrolled to the Vertex AI line.
 
 Footage: Invisible Ink tab, Trace clicked, hop one, then the blocked final hop.
 
-> If you only watch one part of this, watch this one.
+> If you only watch one part of this, watch this one. It is called Invisible Ink.
 >
 > A customer in Ireland complained about bank fees. In passing, she mentioned a
 > cancer diagnosis that had cut her income. Four steps later, a different agent, one
 > that never saw her original complaint, wrote her a letter.
 >
-> Here is that letter. There is no medical word anywhere in it. No diagnosis, no
-> illness, no treatment. Every word is ordinary.
+> Here is that letter, word for word, exactly what Gemini wrote. There is no
+> medical word anywhere in it. No diagnosis, no illness, no treatment. Every
+> word is ordinary.
 >
 > The system blocked it anyway. Health information, from a customer in Europe,
 > heading to a printing vendor in the United States, with no legal basis on file for
 > sending it there.
 >
-> It caught that because the sensitivity tag travels with the information itself,
-> through the AI rewriting it twice in its own words. It is not scanning for
-> forbidden words. That is the difference between a filter that looks like it works
-> and one that actually does, because rewording something never removes a tag that
-> was never attached to the wording.
+> It is not scanning the letter for forbidden words, there are none. A sensitivity
+> tag travels with the information itself, through the AI rewriting it twice in
+> its own words, and rewording something never removes a tag that was never
+> attached to the wording in the first place.
 
 ## 5. The Time Machine (ACTIVE, you click Replay)
 
 Footage: pick the case, set the threshold to 100, click Replay, both panels land.
 
-> Every rule in this system is stored as data, not written into the code. So I can
-> take a case that already closed, change one rule, and run it again.
+> This is the Time Machine. Every rule in this system is stored as data, not
+> written into the code, so I can take a case that already closed, change one
+> rule, and run it again.
 >
 > This case was handled under a five hundred dollar approval limit. Watch it at one
 > hundred. Left is what happened. Right is what would have happened. The same rule
 > now says escalate instead of approve, so that case waits for a human it did not
-> wait for before, against a legal deadline. That is a consequence you would want to
-> see before shipping a policy change, not after.
+> wait for before, against a legal deadline. A bank could see that before shipping
+> the policy change, not find out after.
 
 ## 6. The Crash Test (ACTIVE, you run the command)
 
 Footage: terminal, fault command, the response.
 
-> Let me break it on purpose while it is running. Two of the bank's systems now
-> report a different balance for the same account.
+> This is the Crash Test. Let me break it on purpose while it is running. Two of
+> the bank's systems now report a different balance for the same account.
 >
-> The fleet does not retry, and that is the point. Asking a system that disagrees
-> with another system a second time just gets you the same answer with more
-> confidence. So it stops, records both numbers, and escalates to a person, instead
-> of picking one and acting on information the bank already knows is disputed.
+> Watch what the fleet does not do: it does not retry. Asking a system that
+> disagrees with another system a second time just gets you the same answer with
+> more confidence. So it stops, records both numbers, and escalates to a person,
+> instead of picking one and acting on information the bank already knows is
+> disputed.
 
 ## 7. The Immune System, and the two we are skipping (STATIC, chart is still)
 
 Footage: Immune system tab and its chart, then quickly through the Eraser tab.
 
-> Gemini writes attacks against this system on its own. The red line is how often
-> those attacks succeed. The green line is the library of attacks that have ever
-> worked, which is kept forever and retested against every future version. Red falls
-> while green grows, and you need both lines to trust either one.
+> This is the Immune System. Gemini writes attacks against this system on its own.
+> The red line is how often those attacks succeed. The green line is the library
+> of attacks that have ever worked, kept forever and retested against every
+> future version. Red falls while green grows, and you need both lines to trust
+> either one.
 >
 > An attack only counts as successful if a rule was actually broken. Not if the AI
 > merely sounded rattled. An agent can quote an attacker back and still do exactly
