@@ -1,7 +1,22 @@
-# The four-minute demo, shot live
+# The four-minute demo
 
-Shot in one take, unedited, with the browser and the Cloud Console visible. The
-point of shooting it live is that a reviewer can see it is running rather than
+This is the master reference: every line of narration and every on-screen action,
+in order. It describes shooting in one live take with the browser and the Cloud
+Console visible, narrating as you go.
+
+**If you're recording silent footage first and adding ElevenLabs narration after**
+(the OnboardFlow workflow), use these three documents instead, all derived from
+this one:
+
+1. [SCREEN_RECORDING_GUIDE.md](SCREEN_RECORDING_GUIDE.md): silent capture, no
+   talking, exact clicks and holds, Takes 1-7
+2. [ELEVENLABS_SCRIPT.md](ELEVENLABS_SCRIPT.md): narration only, same 7 blocks,
+   matched to the takes above
+3. [RECORDING_CUE_SHEET.md](RECORDING_CUE_SHEET.md): a condensed sheet to keep
+   open while recording narration, so you're not flipping between the two full
+   documents
+
+The point either way is that a reviewer can see the system is running rather than
 being told.
 
 ## Before you start recording

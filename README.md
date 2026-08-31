@@ -17,7 +17,7 @@ shaped it, and prove regulated data never reached where it should not.
 | Run it yourself in two minutes | [Quick start](#quick-start), below |
 | Deploy your own | [DEPLOY.md](DEPLOY.md) |
 | Know what the fleet actually does | [WORKFLOW.md](WORKFLOW.md) |
-| Record the demo | [VIDEO.md](VIDEO.md) |
+| Record the demo | [VIDEO.md](VIDEO.md) (master script), or [SCREEN_RECORDING_GUIDE.md](SCREEN_RECORDING_GUIDE.md) + [ELEVENLABS_SCRIPT.md](ELEVENLABS_SCRIPT.md) for a silent-capture + narration workflow |
 
 ## Quick start
 
