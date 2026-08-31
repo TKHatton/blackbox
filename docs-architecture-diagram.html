@@ -88,7 +88,7 @@
   .fe .lft { flex: 1.15; }
   .fe .hd { font-size: 18px; font-weight: 700; color: #0f172a; }
   .fe .ds { font-size: 12.8px; color: #334155; margin-top: 5px; line-height: 1.5; }
-  .fe .tabs { flex: 1.5; display: flex; flex-wrap: wrap; gap: 6px; }
+  .fe .tabs { flex: 1.5; display: grid; grid-template-columns: repeat(3, auto); gap: 6px 8px; }
   .tab { background: #fff; border: 1.5px solid #67e8f9; border-radius: 20px; padding: 5px 11px; font-size: 12px; color: #0e7490; font-weight: 600; }
   .fe .ways { flex: 1; }
   .way { font-size: 12px; color: #155e75; line-height: 1.55; }
@@ -148,9 +148,9 @@
       </div>
       <div class="arw">&rarr;</div>
       <div class="node">
-        <div class="ic">&#127974;</div>
-        <div class="nm">Bank Systems</div>
-        <div class="ds">Accounts, CRM, call archive, print vendor, regulator portal.</div>
+        <div class="ic">&#128268;</div>
+        <div class="nm">External Systems</div>
+        <div class="ds">Whatever systems of record the agents need to reach, swappable per deployment.</div>
       </div>
     </div>
     <div class="bridge">
