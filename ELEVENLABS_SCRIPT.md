@@ -129,11 +129,14 @@ Footage: terminal, fault command, the response.
 
 Footage: Immune system tab and its chart, then quickly through the Eraser tab.
 
-> This is the Immune System. Gemini writes attacks against this system on its own.
-> The red line is how often those attacks succeed. The green line is the library
-> of attacks that have ever worked, kept forever and retested against every
-> future version. Red falls while green grows, and you need both lines to trust
-> either one.
+> This is the Immune System. Gemini writes attacks against this system on its own,
+> prompt injection, poisoned records, pressure across a deadline, and anything
+> that ever works gets kept forever in a corpus and retested against every future
+> version.
+>
+> Nine attacks so far, across three campaigns I ran right before recording this.
+> Zero got through. That flat line is nine separate attempts by Gemini to break
+> its own fleet, and every one failed.
 >
 > An attack only counts as successful if a rule was actually broken. Not if the AI
 > merely sounded rattled. An agent can quote an attacker back and still do exactly

@@ -105,8 +105,10 @@ This carries the longest narration block. Move slowly and deliberately.
 
 ## Take 7: Immune System, then a glance at the Eraser (STATIC, ~18s)
 
-1. Click the **Immune system** tab. Hold 6-8 seconds on the chart, still. Trace the
-   falling red line, then the rising green line, slowly.
+1. Click the **Immune system** tab. Hold 6-8 seconds on the chart, still. It
+   currently shows a flat line at zero across three campaign runs (v1, v2, v3),
+   nine attacks total, none successful. Point at the flat line, not a moving
+   one, the narration explains why that is the point.
 2. Click the **The Eraser** tab. Hold 4-5 seconds. No interaction needed, the
    narration is naming it in passing, not demonstrating it.
 
