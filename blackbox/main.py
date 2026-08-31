@@ -19,7 +19,8 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
-from fastapi import Body, FastAPI, HTTPException, Response
+from fastapi import Body, FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 from . import approvals, ingest
 from .agents.intake_service import case_id_for, run_intake
@@ -42,6 +43,7 @@ from .degradation import score_degradation
 from .faults import Fault, FaultType, get_fault_registry
 from .immune_service import ImmuneMetrics, run_campaign
 from .redteam import AttackFamily, RegressionCorpus
+from .schema import EventType as EventTypeRef
 from .stunt import AgentVersion
 from .tiering import TieringManager
 from .timemachine import state_as_of
@@ -118,8 +120,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="BLACKBOX",
-    description="The flight recorder for AI agents. Phase 9: The Crash Test.",
-    version="0.9.0",
+    description="The flight recorder for AI agents. Phase 10: The Split Screen.",
+    version="0.10.0",
     lifespan=lifespan,
 )
 
@@ -130,7 +132,7 @@ def healthz() -> Dict[str, Any]:
     settings = get_settings()
     return {
         "status": "ok",
-        "phase": "9",
+        "phase": "10",
         "project_id": settings.project_id or None,
         "firestore_database": settings.firestore_database,
         "gemini_model": settings.gemini_model,
@@ -431,6 +433,124 @@ def get_immune_metrics() -> ImmuneMetrics:
     if "metrics" not in _immune:
         _immune["metrics"] = ImmuneMetrics()
     return _immune["metrics"]
+
+
+@app.get("/", response_class=HTMLResponse)
+def split_screen() -> str:
+    """The Split Screen: nine phases of plumbing, made visible.
+
+    Served from the same process as the API it reads, so everything on the page
+    is live data rather than a mock.
+    """
+    from .ui import SPLIT_SCREEN_HTML
+
+    return SPLIT_SCREEN_HTML
+
+
+@app.get("/stream/reasoning")
+async def stream_reasoning(request: Request, case_id: str = "", after: str = ""):
+    """Stream Gemini's reasoning as it is recorded.
+
+    Server-sent events. Reasoning shown as a collapsed log requiring clicks to
+    expand is a named failure mode for the Split Screen, so this pushes each
+    THOUGHT as it lands rather than waiting to be asked.
+    """
+    import asyncio
+    import json as _json
+
+    async def events():
+        cursor = after
+        idle = 0
+        while idle < 600:
+            if await request.is_disconnected():
+                break
+            try:
+                store = get_store()
+                if case_id:
+                    found = store.list_events_by_type(case_id, EventTypeRef.THOUGHT)
+                else:
+                    found = store.scan_events_by_type(EventTypeRef.THOUGHT, limit=200)
+                fresh = [e for e in found if e.event_id > cursor]
+                fresh.sort(key=lambda e: e.event_id)
+            except Exception as exc:  # pragma: no cover - depends on the store
+                problem = _json.dumps({"error": str(exc)})
+                yield "event: error\ndata: " + problem + "\n\n"
+                await asyncio.sleep(3)
+                continue
+
+            for event in fresh[-40:]:
+                cursor = event.event_id
+                idle = 0
+                payload = {
+                    "event_id": event.event_id,
+                    "case_id": event.case_id,
+                    "actor": event.actor,
+                    "timestamp": event.timestamp.isoformat(),
+                    "reasoning": event.payload.get("reasoning", ""),
+                    "decision": event.payload.get("decision", ""),
+                    "labels": event.labels or {},
+                }
+                yield "data: " + _json.dumps(payload) + "\n\n"
+
+            if not fresh:
+                idle += 1
+                yield ": keep-alive\n\n"
+            await asyncio.sleep(1.5)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/overview")
+def overview() -> Dict[str, Any]:
+    """Everything the Split Screen needs to open, in one call."""
+    store = get_store()
+    settings = get_settings()
+
+    cases = []
+    for complaint in data.INBOUND_COMPLAINTS:
+        case_id = case_id_for(complaint["complaint_ref"])
+        events = store.list_events(case_id)
+        if not events:
+            cases.append({"case_id": case_id, "open": False, "events": 0})
+            continue
+        state = fold_events(events)
+        page = None
+        try:
+            page = get_wiki().get_page(f"case:{case_id}", enforce_region=False)
+        except Exception:  # pragma: no cover
+            page = None
+        cases.append(
+            {
+                "case_id": case_id,
+                "open": True,
+                "events": len(events),
+                "status": state.current_status,
+                "jurisdiction": (page.content.get("jurisdiction") if page else None),
+                "vulnerable": (page.content.get("vulnerability_indicators") if page else None),
+                "blocked": len(blocked_disclosures(store, case_id)),
+            }
+        )
+
+    try:
+        suspensions = len(find_open_suspensions(store))
+    except Exception:  # pragma: no cover
+        suspensions = 0
+
+    return {
+        "phase": "10",
+        "project": settings.project_id or None,
+        "model": settings.gemini_model,
+        "worker_region": settings.worker_region,
+        "policy_version": get_policy_engine().policies.version,
+        "cases": cases,
+        "open_suspensions": suspensions,
+        "corpus_size": get_corpus().size,
+        "faults_armed": len(get_fault_registry().active()),
+    }
 
 
 @app.post("/faults/arm")

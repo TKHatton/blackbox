@@ -21,7 +21,8 @@ shaped it, and prove regulated data never reached where it should not.
 | 7. The Stunt Double | Done. Shadow runs, Gemini judge, promotion gate. |
 | 8. The Immune System | Done. Generated attacks, growing corpus, falling rate. |
 | 9. The Crash Test | Done. Faults the agents see, degradation scored. |
-| 10. The Split Screen | Next. |
+| 10. The Split Screen | Done. Six live views, served at `/`. |
+| 11. The package | Next. |
 
 ### A correction to the earlier Phase 1 claim
 
@@ -65,6 +66,37 @@ Shelf 3 writes Parquet partitioned by date, so a six month query scans six month
 Verified against live infrastructure: 4 events moved Firestore to BigQuery and
 read back byte-identical, then BigQuery to Cloud Storage as Parquet and folded to
 the same state from cold storage.
+
+## What Phase 10 built
+
+One page, served at `/`, that makes nine phases of plumbing legible. Everything on
+it is live data from the same process that serves the API.
+
+**Not a dashboard of tiles.** Tiles show that a system exists; they do not show it
+working. The page leads with things happening: reasoning arriving, a divergence
+opening up, a label travelling four hops. There is one row of numbers at the top
+and it is context for the rest.
+
+**Reasoning streams.** Server-sent events, appearing as each THOUGHT is written.
+A collapsed log you have to click into hides the thing worth seeing.
+
+**Live, not static.** Every panel fetches from a live endpoint, and says so when
+there is nothing there yet rather than rendering plausible placeholder data. No
+CDN and no build step: the whole page is one self-contained file, so it also works
+on a locked-down network.
+
+The six views: the live fleet with streaming reasoning, the split screen, the
+Invisible Ink taint path, the Eraser cascade, a Time Machine scrubber, and the
+immune system's two curves.
+
+### A fix the UI forced
+
+Building the divergence view showed that comparing two runs by position reports
+the wrong thing. The replay does not re-emit a tool call the original made, so
+index one differs for a structural reason, and the gate that actually changed its
+mind gets buried underneath. Divergence now also pairs governance rules **by
+rule**, so the headline is `gate_a_monetary_threshold: allow became escalate`
+rather than a note about a missing tool call.
 
 ## What Phase 9 built
 
@@ -510,6 +542,7 @@ blackbox/
   wiki.py              Wiki page schema, with derived_from
   wiki_store.py        Wiki storage. Rewrites in place, records each rewrite
   tiering.py           Three shelves. Still a stub, see below
+  ui.py                The Split Screen, one self-contained page
   faults.py            Breaking things where the agents can see it
   degradation.py       Recovered, escalated, halted safely, or proceeded badly
   immune.py            What counts as a compromise: boundaries, not tone
@@ -559,6 +592,7 @@ tests/
   test_phase7.py       Write isolation, judged comparison, the promotion gate
   test_phase8.py       Success criteria, attack generation, the corpus
   test_phase9.py       Faults the agents see, and degradation scoring
+  test_phase10.py      The page is live, streams, and is not a tile board
   test_tiering.py      The three shelves, and that moving loses nothing
   conftest.py          In-memory fixtures, so the suite needs no credentials
   fakes.py             A scripted stand-in for Gemini, tests only
@@ -585,7 +619,7 @@ against the in-memory backend with a scripted model.
 .venv/Scripts/python -m pytest -q
 ```
 
-270 tests, all passing.
+278 tests, all passing.
 
 To run the service locally against the in-memory store:
 
@@ -604,6 +638,9 @@ See `DEPLOY.md`. Short version: fill in `.env`, then `bash deploy.sh`.
 
 | Endpoint | What it shows |
 |---|---|
+| `GET /` | **The Split Screen.** Six live views of the fleet |
+| `GET /stream/reasoning` | Gemini's reasoning, streamed as it is recorded |
+| `GET /overview` | Everything the Split Screen needs to open |
 | `GET /healthz` | How this instance is configured |
 | `GET /cases` | Every seeded complaint, and whether a case is open |
 | `GET /cases/{id}` | State, computed by folding the log |

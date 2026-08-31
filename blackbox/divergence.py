@@ -141,6 +141,22 @@ class Divergence:
     downstream: List[Dict[str, Any]] = field(default_factory=list)
     original_decisions: List[Tuple[str, str]] = field(default_factory=list)
     replay_decisions: List[Tuple[str, str]] = field(default_factory=list)
+    #: Rules that reached a different verdict, paired by rule rather than by
+    #: position. Index alignment alone reports a structural difference (the
+    #: replay not re-emitting a tool call) as though it were the interesting one,
+    #: and buries the rule that actually changed its mind.
+    rule_changes: List[Dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def headline(self) -> str:
+        """The difference worth leading with."""
+        if self.rule_changes:
+            change = self.rule_changes[0]
+            return (
+                f"{change['rule']} reached a different verdict: "
+                f"{change['originally']} became {change['in_replay']}."
+            )
+        return self.explanation
 
     def summary(self) -> str:
         if not self.diverged:
@@ -152,8 +168,47 @@ class Divergence:
         )
 
 
+def policy_verdicts(events: List[Event]) -> Dict[str, str]:
+    """The verdict each governance rule reached in a run, keyed by rule."""
+    verdicts: Dict[str, str] = {}
+    for event in events:
+        if event.event_type != EventType.POLICY_CHECK:
+            continue
+        rule = event.payload.get("policy_id")
+        if rule:
+            verdicts[str(rule)] = str(event.payload.get("decision"))
+    return verdicts
+
+
+def compare_rule_verdicts(
+    original: List[Event], replayed: List[Event]
+) -> List[Dict[str, Any]]:
+    """Rules that decided differently, paired by rule rather than by position.
+
+    This is what a policy replay is actually asking. Pairing by index would
+    report the replay not re-emitting a tool call as the first difference, which
+    is true and uninteresting, and would bury the gate that changed its mind.
+    """
+    was, now = policy_verdicts(original), policy_verdicts(replayed)
+    changes = []
+    for rule in sorted(set(was) | set(now)):
+        before, after = was.get(rule), now.get(rule)
+        if before != after:
+            changes.append(
+                {
+                    "rule": rule,
+                    "originally": before or "not evaluated",
+                    "in_replay": after or "not evaluated",
+                }
+            )
+    return changes
+
+
 def compare_runs(original: List[Event], replayed: List[Event]) -> Divergence:
-    """Find the first point two runs differ, and everything that followed.
+    """Find where two runs differ, and everything that followed.
+
+    Reports two things: the rules that reached different verdicts, paired by
+    rule, and the first positional difference with its downstream consequences.
 
     Args:
         original: The recorded events from the rewind point onwards.
@@ -162,6 +217,7 @@ def compare_runs(original: List[Event], replayed: List[Event]) -> Divergence:
     Returns:
         Where the runs split, and every decision that differs after it.
     """
+    rule_changes = compare_rule_verdicts(original, replayed)
     original_decisions = [
         decision_signature(e) for e in original if e.event_type in DECISION_TYPES
     ]
@@ -192,13 +248,19 @@ def compare_runs(original: List[Event], replayed: List[Event]) -> Divergence:
             downstream=downstream,
             original_decisions=original_decisions,
             replay_decisions=replay_decisions,
+            rule_changes=rule_changes,
         )
 
     return Divergence(
-        diverged=False,
+        diverged=bool(rule_changes),
         original_decisions=original_decisions,
         replay_decisions=replay_decisions,
-        explanation="No decision differed under the amended policy.",
+        rule_changes=rule_changes,
+        explanation=(
+            "No decision differed under the amended policy."
+            if not rule_changes
+            else "The same actions were taken, but a rule reached a different verdict."
+        ),
     )
 
 

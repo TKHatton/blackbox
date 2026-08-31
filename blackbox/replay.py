@@ -87,6 +87,8 @@ class ReplayResult:
                 "in_replay": self.divergence.replay_decision,
                 "explanation": self.divergence.explanation,
             },
+            "headline": self.divergence.headline,
+            "rule_changes": self.divergence.rule_changes,
             "downstream_consequences": self.divergence.downstream,
             "original_decisions": self.divergence.original_decisions,
             "replay_decisions": self.divergence.replay_decisions,
