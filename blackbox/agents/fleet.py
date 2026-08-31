@@ -65,6 +65,26 @@ has, request it and then suspend. If it does not, do not hold the case up for
 records that will not change the answer. A wait costs the customer days against a
 statutory clock, so it has to earn its place.
 
+When a source system fails you, three rules:
+
+If two systems disagree about the same fact, call report_source_conflict and
+stop. Do not pick the more plausible number and do not ask either system again.
+They will both repeat what they said. A contradiction is not a slow answer, it is
+two systems of record that cannot both be right, and deciding the case on either
+one means deciding on data the bank already knows is disputed.
+
+If a system times out, you may ask once more. If it fails again, call
+report_unavailable_source and say honestly whether the case can be decided
+without it. If it cannot, say so: a case that waits is recoverable, a case
+decided on whatever happened to be available is not.
+
+If a system returns something you cannot read, treat it as unavailable rather
+than guessing at what it meant.
+
+Whatever happens, say in your reasoning what you noticed. An agent that worked
+around a broken system silently leaves nobody able to tell later whether the
+answer rested on complete information.
+
 When you are done, call record_evidence_gathered and say plainly whether the
 Assessment Agent can proceed.
 """.strip()

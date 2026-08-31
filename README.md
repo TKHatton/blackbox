@@ -20,7 +20,8 @@ shaped it, and prove regulated data never reached where it should not.
 | 6. The Time Machine | Done. Policies as data, replay, divergence. |
 | 7. The Stunt Double | Done. Shadow runs, Gemini judge, promotion gate. |
 | 8. The Immune System | Done. Generated attacks, growing corpus, falling rate. |
-| 9. The Crash Test | Next. |
+| 9. The Crash Test | Done. Faults the agents see, degradation scored. |
+| 10. The Split Screen | Next. |
 
 ### A correction to the earlier Phase 1 claim
 
@@ -64,6 +65,54 @@ Shelf 3 writes Parquet partitioned by date, so a six month query scans six month
 Verified against live infrastructure: 4 events moved Firestore to BigQuery and
 read back byte-identical, then BigQuery to Cloud Storage as Parquet and folded to
 the same state from cold storage.
+
+## What Phase 9 built
+
+Faults injected where the agents can see them, and a score for how the fleet
+came out.
+
+**A fault the agents never see proves nothing.** So every fault surfaces as a
+tool result an agent reads: a timeout comes back as a result saying the call
+timed out, a contradiction comes back as two systems returning different numbers
+with both visible. The agent has to decide, and the decision is recorded.
+
+**Retrying a contradiction is not handling it.** A timeout may be transient and
+one retry is reasonable. A contradiction is not: if CoreBank says one balance and
+CRM360 says another, asking either again returns the same answer more
+confidently. That distinction is enforced rather than described, because the
+contradiction fault returns the identical pair however many times it is called,
+so a fleet cannot retry its way past one.
+
+**Four outcomes, one of which is a failure.** Recovered, escalated, halted
+safely, or proceeded on bad data. The last is what this phase exists to detect,
+because it is the outcome that looks fine in a log: the fleet saw a fault and
+then took a consequential action anyway without recording that it knew. Reading a
+second source after a timeout is not that. Deciding a case while the balance is
+disputed and never mentioning the dispute is.
+
+Noticing is not the same as handling, and the scorer says so: a fleet that
+acknowledged a contradiction and then decided anyway, without escalating, is
+still scored as having proceeded on bad data.
+
+**Recovery paths the agents actually have.** The Evidence Agent gained two tools
+and the instruction to use them: `report_source_conflict`, which records both
+values and escalates without picking a side, and `report_unavailable_source`,
+which asks the agent to say honestly whether the case can be decided without what
+it could not reach.
+
+### Seeing it
+
+```bash
+BLACKBOX_IN_MEMORY=1 python demo_crash_test.py
+```
+
+Four faults. A contradiction that gets escalated, a timeout on a case that needed
+the missing data and gets escalated, the same timeout on a case that did not and
+gets recovered, and the same contradiction handled by a fleet that noticed and
+decided anyway. Three safe, one caught.
+
+On a deployed service the faults are armed through an endpoint mid-demo, so
+something can be broken on camera without a redeploy.
 
 ## What Phase 8 built
 
@@ -461,6 +510,8 @@ blackbox/
   wiki.py              Wiki page schema, with derived_from
   wiki_store.py        Wiki storage. Rewrites in place, records each rewrite
   tiering.py           Three shelves. Still a stub, see below
+  faults.py            Breaking things where the agents can see it
+  degradation.py       Recovered, escalated, halted safely, or proceeded badly
   immune.py            What counts as a compromise: boundaries, not tone
   redteam.py           Attack families, Gemini generation, the corpus
   immune_service.py    Running attacks against the fleet, and the curves
@@ -507,6 +558,7 @@ tests/
   test_phase6.py       Policies as data, state as-of, fixtures, divergence
   test_phase7.py       Write isolation, judged comparison, the promotion gate
   test_phase8.py       Success criteria, attack generation, the corpus
+  test_phase9.py       Faults the agents see, and degradation scoring
   test_tiering.py      The three shelves, and that moving loses nothing
   conftest.py          In-memory fixtures, so the suite needs no credentials
   fakes.py             A scripted stand-in for Gemini, tests only
@@ -516,6 +568,7 @@ demo_eraser.py         One retraction, six derived pages, and a refused border
 demo_time_machine.py   Tighten a threshold, replay, see which cases change
 demo_stunt_double.py   A candidate that sounded kind and tested as a risk
 demo_immune_system.py  Attacks that write themselves, and a curve that falls
+demo_crash_test.py     Four faults, and a fleet that refuses to guess
 ```
 
 ## Running it locally
@@ -532,7 +585,7 @@ against the in-memory backend with a scripted model.
 .venv/Scripts/python -m pytest -q
 ```
 
-246 tests, all passing.
+270 tests, all passing.
 
 To run the service locally against the in-memory store:
 
@@ -570,6 +623,9 @@ See `DEPLOY.md`. Short version: fill in `.env`, then `bash deploy.sh`.
 | `POST /redteam/campaign` | Invent attacks, re-run the corpus, score both |
 | `GET /redteam/corpus` | Every attack that has ever worked |
 | `GET /redteam/metrics` | Success rate and corpus size over time |
+| `POST /faults/arm` | Break something, live, without a redeploy |
+| `POST /faults/disarm` | Put everything back |
+| `GET /cases/{id}/degradation` | How the fleet came out of a fault |
 | `GET /wiki/{page_id}` | What agents read during normal operation |
 | `GET /stubs/...` | The source systems, for inspection |
 

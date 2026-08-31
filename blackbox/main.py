@@ -38,6 +38,8 @@ from .shadow_service import (
     record_shadow_run,
     run_shadow,
 )
+from .degradation import score_degradation
+from .faults import Fault, FaultType, get_fault_registry
 from .immune_service import ImmuneMetrics, run_campaign
 from .redteam import AttackFamily, RegressionCorpus
 from .stunt import AgentVersion
@@ -46,6 +48,18 @@ from .timemachine import state_as_of
 from .regions import RegionRoutingRefused, evaluate_routing
 from .stubs import data
 from .stubs.systems import SourceSystemError, get_source_systems
+
+
+def get_fleet_systems():
+    """The source systems the live fleet runs against.
+
+    Wrapped in the fault layer so a fault armed during a demo reaches the agents
+    on the next run. With nothing armed, every call passes straight through to
+    the genuine stub.
+    """
+    from .faults import FaultySystems
+
+    return FaultySystems(get_source_systems())
 from .taint import blocked_disclosures, summarise_path, taint_path
 from .wake import find_open_suspensions
 from .wiki_store import WikiStore
@@ -104,8 +118,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="BLACKBOX",
-    description="The flight recorder for AI agents. Phase 8: The Immune System.",
-    version="0.8.0",
+    description="The flight recorder for AI agents. Phase 9: The Crash Test.",
+    version="0.9.0",
     lifespan=lifespan,
 )
 
@@ -116,7 +130,7 @@ def healthz() -> Dict[str, Any]:
     settings = get_settings()
     return {
         "status": "ok",
-        "phase": "8",
+        "phase": "9",
         "project_id": settings.project_id or None,
         "firestore_database": settings.firestore_database,
         "gemini_model": settings.gemini_model,
@@ -160,7 +174,9 @@ async def pubsub_complaint(envelope: Dict[str, Any] = Body(...)) -> Response:
         return Response(status_code=204)
 
     try:
-        result = await run_intake(complaint, store=store, wiki_store=get_wiki())
+        result = await run_intake(
+            complaint, store=store, wiki_store=get_wiki(), systems=get_fleet_systems()
+        )
     except Exception:
         logger.exception("Intake failed for %s", complaint["complaint_ref"])
         raise HTTPException(status_code=500, detail="Intake failed, message will be retried")
@@ -180,7 +196,7 @@ async def heartbeat() -> Dict[str, Any]:
     whose condition is now met.
     """
     return await run_heartbeat(
-        store=get_store(), wiki_store=get_wiki(), systems=get_source_systems()
+        store=get_store(), wiki_store=get_wiki(), systems=get_fleet_systems()
     )
 
 
@@ -415,6 +431,61 @@ def get_immune_metrics() -> ImmuneMetrics:
     if "metrics" not in _immune:
         _immune["metrics"] = ImmuneMetrics()
     return _immune["metrics"]
+
+
+@app.post("/faults/arm")
+def arm_fault(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    """Break something, live, without a redeploy.
+
+    The fault surfaces as a tool result the agent reads, not as an exception the
+    infrastructure swallows. A fault the agents never see would prove nothing.
+
+    Body: fault_type, optionally system, method, count, and detail.
+    """
+    try:
+        fault_type = FaultType(request.get("fault_type", ""))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown fault type. Known: {[f.value for f in FaultType]}",
+        ) from exc
+
+    fault = get_fault_registry().arm(
+        Fault(
+            fault_type=fault_type,
+            target_system=request.get("system", ""),
+            target_method=request.get("method", ""),
+            remaining=request.get("count"),
+            detail=request.get("detail") or {},
+        )
+    )
+    return {"armed": fault.to_dict(), "active": len(get_fault_registry().active())}
+
+
+@app.post("/faults/disarm")
+def disarm_faults() -> Dict[str, Any]:
+    """Put everything back."""
+    return {"disarmed": get_fault_registry().disarm_all()}
+
+
+@app.get("/faults")
+def list_faults() -> Dict[str, Any]:
+    """What is currently broken."""
+    return get_fault_registry().to_dict()
+
+
+@app.get("/cases/{case_id}/degradation")
+def case_degradation(case_id: str) -> Dict[str, Any]:
+    """How the fleet behaved when something broke on this case.
+
+    Four outcomes and only one is a failure: recovered, escalated, halted safely,
+    or proceeded on bad data. The last is the one this phase exists to detect,
+    because it is the outcome that looks fine in a log.
+    """
+    events = get_store().list_events(case_id)
+    if not events:
+        raise HTTPException(status_code=404, detail=f"No events for case {case_id}")
+    return score_degradation(events).to_dict()
 
 
 @app.post("/redteam/campaign")
@@ -714,7 +785,9 @@ async def debug_intake(complaint_ref: str) -> Dict[str, Any]:
             f"cannot be reopened. Inspect it at /cases/{case_id}/trace.",
         )
 
-    return await run_intake(complaint, store=store, wiki_store=get_wiki())
+    return await run_intake(
+        complaint, store=store, wiki_store=get_wiki(), systems=get_fleet_systems()
+    )
 
 
 @app.get("/suspensions")

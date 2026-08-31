@@ -234,6 +234,146 @@ def suspend_until_evidence_ready(job_id: str, ready_at: str, what_you_are_waitin
     }
 
 
+def report_source_conflict(
+    field: str, source_a: str, value_a: str, source_b: str, value_b: str, why_it_matters: str
+) -> Dict[str, Any]:
+    """Report that two systems of record disagree, and stop.
+
+    Call this when two sources give different answers for the same fact. Do not
+    pick one. Do not call either system again hoping for a different answer: they
+    will both repeat what they said, and a contradiction is not a transient
+    failure that retrying resolves.
+
+    Deciding a case on either number would mean deciding on data the bank already
+    knows is disputed, and the customer would receive an outcome built on it. A
+    person has to resolve which system is right.
+
+    Args:
+        field: What the systems disagree about, for example "balance".
+        source_a: The first system.
+        value_a: What it said.
+        source_b: The second system.
+        value_b: What it said.
+        why_it_matters: What this blocks, in plain language.
+
+    Returns:
+        Confirmation that the conflict is recorded and the case is escalated.
+    """
+    run = current_run()
+
+    run.recorder.policy_check(
+        policy_id="source_systems_disagree",
+        check_type="data_integrity",
+        input_data={
+            "field": field,
+            source_a: value_a,
+            source_b: value_b,
+        },
+        decision="block",
+        reasoning=(
+            f"{source_a} and {source_b} disagree on {field}: {value_a} against "
+            f"{value_b}. This cannot be resolved by asking either of them again. "
+            f"No decision may rest on either value until a person establishes which "
+            f"is correct. {why_it_matters}"
+        ),
+    )
+
+    event_id = run.recorder.escalate(
+        reason=(
+            f"Two systems of record disagree on {field}. {source_a} says {value_a}, "
+            f"{source_b} says {value_b}. {why_it_matters}"
+        ),
+        escalation_type="human",
+        context={
+            "field": field,
+            "conflict": {source_a: value_a, source_b: value_b},
+            "case_id": run.recorder.case_id,
+        },
+        urgency="high",
+    )
+
+    _rewrite_case_file(
+        {
+            "status": "blocked_on_data_conflict",
+            "data_conflict": {
+                "field": field,
+                source_a: value_a,
+                source_b: value_b,
+            },
+            "next_step": "A person must establish which system is correct",
+        },
+        reason="Source systems disagree, so the case cannot proceed",
+    )
+
+    return {
+        "status": "ESCALATED",
+        "event_id": event_id,
+        "note": (
+            "The conflict is recorded and a person has been asked to resolve it. "
+            "Stop here. Do not decide the case on either value."
+        ),
+    }
+
+
+def report_unavailable_source(
+    system: str, what_was_needed: str, can_proceed_without: bool, reasoning: str
+) -> Dict[str, Any]:
+    """Record that a source system could not be reached, and say what that costs.
+
+    Use this when a system times out or returns something unreadable. Say
+    honestly whether the case can be decided without it. If it cannot, the case
+    waits rather than being decided on what happens to be available.
+
+    Args:
+        system: Which system.
+        what_was_needed: What you were trying to get from it.
+        can_proceed_without: Whether a sound decision is still possible.
+        reasoning: Why you believe that.
+
+    Returns:
+        Confirmation, and what happens next.
+    """
+    run = current_run()
+
+    run.recorder.policy_check(
+        policy_id="source_system_unavailable",
+        check_type="data_integrity",
+        input_data={"system": system, "needed": what_was_needed},
+        decision="allow" if can_proceed_without else "block",
+        reasoning=(
+            f"{system} was unavailable when asked for {what_was_needed}. "
+            f"{'The case can proceed without it: ' if can_proceed_without else 'The case cannot be decided without it: '}"
+            f"{reasoning}"
+        ),
+    )
+
+    if not can_proceed_without:
+        run.recorder.escalate(
+            reason=(
+                f"{system} is unavailable and {what_was_needed} is needed to decide "
+                f"this case. {reasoning}"
+            ),
+            escalation_type="human",
+            context={"system": system, "case_id": run.recorder.case_id},
+            urgency="medium",
+        )
+
+    _rewrite_case_file(
+        {
+            "unavailable_sources": [system],
+            "evidence_outstanding": what_was_needed,
+            "status": "open" if can_proceed_without else "blocked_on_unavailable_source",
+        },
+        reason=f"{system} was unavailable",
+    )
+
+    return {
+        "status": "RECORDED" if can_proceed_without else "ESCALATED",
+        "system": system,
+        "can_proceed_without": can_proceed_without,
+    }
+
+
 def record_evidence_gathered(
     summary: str, sufficient_to_assess: bool, outstanding_items: str
 ) -> Dict[str, Any]:
@@ -886,6 +1026,8 @@ EVIDENCE_TOOLS = [
     get_account_transactions,
     request_comms_archive,
     suspend_until_evidence_ready,
+    report_source_conflict,
+    report_unavailable_source,
     record_evidence_gathered,
 ]
 
