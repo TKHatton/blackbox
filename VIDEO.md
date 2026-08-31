@@ -47,7 +47,7 @@ on screen. Unscripted model output is the most convincing thing in the video.
 > Here is the same thing from the other side. Cloud Run, the live service, and
 > these are Vertex AI calls going out to Gemini as the fleet works.
 
-**Do:** scroll so `Sending out request, model: gemini-2.5-flash, backend:
+**Do:** scroll so `Sending out request, model: gemini-3.5-flash, backend:
 VERTEX_AI` is visible. Sit on it for two seconds.
 
 > Firestore holds the log. BigQuery holds anything older than a week. The
@@ -189,9 +189,9 @@ of shooting live is that it is visibly live.
 
 ## What not to claim
 
-Say "Gemini 2.5 Flash". The build spec asks for 3.5 or newer, and no 3.x model id
-resolves on Vertex AI for this project. That is documented in the README and it
-is better said plainly than glossed over.
+Say "Gemini 3.5 Flash". It runs on Vertex AI's global endpoint rather than a
+region, which is documented in the README. Do not say a region name next to
+the model, since that part of the setup is deliberately not region-pinned.
 
 Do not say the tiering has been running for months. It works, it is scheduled
 daily, and it has been verified end to end against BigQuery and Cloud Storage.
