@@ -6,6 +6,8 @@ recorded, the platform can do things a normal agent system cannot: rewind any
 decision, replay it under different rules, trace any output back to the data that
 shaped it, and prove regulated data never reached where it should not.
 
+![Architecture: Gemini on Vertex AI wired into the six-agent fleet, the three-shelf storage, and the Split Screen UI](architecture-diagram.png)
+
 ## Start here
 
 | If you want to | Go to |

@@ -4,6 +4,8 @@ Six agents doing regulated work, on top of a recording layer that cannot be
 edited. Everything below runs on Google Cloud, and every model call goes to
 Gemini on Vertex AI.
 
+![Architecture: Gemini on Vertex AI wired into the six-agent fleet, the three-shelf storage, and the Split Screen UI](architecture-diagram.png)
+
 ## The whole system
 
 ```mermaid
