@@ -6,6 +6,60 @@ recorded, the platform can do things a normal agent system cannot: rewind any
 decision, replay it under different rules, trace any output back to the data that
 shaped it, and prove regulated data never reached where it should not.
 
+## Start here
+
+| If you want to | Go to |
+|---|---|
+| See it running | The Split Screen at `/` on the deployed service |
+| Understand how it fits together | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Run it yourself in two minutes | [Quick start](#quick-start), below |
+| Deploy your own | [DEPLOY.md](DEPLOY.md) |
+| Know what the fleet actually does | [WORKFLOW.md](WORKFLOW.md) |
+| Record the demo | [VIDEO.md](VIDEO.md) |
+
+## Quick start
+
+No Google Cloud account needed for any of this. The tests and demos use an
+in-memory store and a scripted model, so they run offline.
+
+```bash
+python -m venv .venv
+.venv/Scripts/pip install -r requirements.txt
+```
+
+Run the suite. 278 tests, no credentials, no network:
+
+```bash
+.venv/Scripts/python -m pytest -q
+```
+
+Then watch the system do the things it was built for. Each demo is standalone and
+prints what it is doing as it goes:
+
+```bash
+BLACKBOX_IN_MEMORY=1 .venv/Scripts/python demo_lifecycle.py
+```
+
+| Demo | What it shows |
+|---|---|
+| `demo_lifecycle.py` | One complaint from arrival to closure, with the calendar compressed |
+| `demo_invisible_ink.py` | A letter with no medical word in it, blocked, and the trail back |
+| `demo_eraser.py` | One retraction, six derived pages, and a refused border |
+| `demo_time_machine.py` | Tighten a threshold and see which cases would have changed |
+| `demo_stunt_double.py` | A candidate agent that sounded kind and tested as a risk |
+| `demo_immune_system.py` | Attacks that write themselves, and a success curve that falls |
+| `demo_crash_test.py` | Four faults, and a fleet that refuses to guess |
+
+To run the service itself locally, with the Split Screen at `http://127.0.0.1:8080/`:
+
+```bash
+BLACKBOX_IN_MEMORY=1 GOOGLE_CLOUD_PROJECT=local .venv/Scripts/python -m uvicorn blackbox.main:app --port 8080
+```
+
+The page will be empty until a case exists, because it renders live data rather
+than placeholders. `POST /debug/intake/CMP-2026-0841` opens one, and that needs
+Gemini credentials; everything else works offline.
+
 ## Status
 
 | Phase | State |
@@ -13,7 +67,7 @@ shaped it, and prove regulated data never reached where it should not.
 | 0. Define the work | Done. See `WORKFLOW.md`. |
 | 1. The Flight Recorder | Done, and the write path now actually runs. See the note below. |
 | 1.5. The Wiki and three shelves | Done. Tiering rewritten: copy, verify, evict. |
-| 2. One agent, deployed | Built and verified. Cloud Run deploy blocked on billing, see below. |
+| 2. One agent, deployed | Done. Live on Cloud Run, Gemini via Vertex AI. |
 | 3. The fleet wakes itself up | Done. Six agents, suspend and resume, heartbeat. |
 | 4. Invisible Ink | Done. Label lattice, propagation, exit checks, taint path. |
 | 5. The Eraser | Done. Transitive cascade, regeneration, region pinning. |
@@ -22,7 +76,7 @@ shaped it, and prove regulated data never reached where it should not.
 | 8. The Immune System | Done. Generated attacks, growing corpus, falling rate. |
 | 9. The Crash Test | Done. Faults the agents see, degradation scored. |
 | 10. The Split Screen | Done. Six live views, served at `/`. |
-| 11. The package | Next. |
+| 11. The package | Done. Architecture, spin-up, video script, build post. |
 
 ### A correction to the earlier Phase 1 claim
 
@@ -706,18 +760,24 @@ names a model.
 
 ## Known gaps
 
-- **CommsVault job records live in process memory.** The wake condition moved
-  into the Diary in Phase 3, so no case is lost when an instance recycles. What
-  is still in memory is the stub's own map of job ids to ready times, so a
-  recycled instance answers "unknown job" and the case stays suspended rather
-  than resuming wrongly. Moving the stub's state into Firestore is small work
-  and is not done.
-- **Propagation is conservative.** A turn that saw special category data carries
-  that class even if it only wrote about fees. Over-restriction is the safe
-  direction and the label's origins say which source caused it, so a cautious
-  block is legible rather than mysterious. A finer-grained model would need to
-  ask Gemini which facts it actually used, and a model that under-reports its own
-  influences produces a label that is quietly too loose.
+Stated plainly, because a reviewer will find them anyway.
+
+- **Propagation is conservative.** A model turn that saw special category data
+  carries that class even if it only wrote about fees. Over-restriction is the
+  safe direction and the label's origins say which source caused it, so a
+  cautious block is legible. A finer-grained model would mean asking Gemini which
+  facts it actually used, and a model that under-reports its own influences
+  produces a label that is quietly too loose.
+- **CommsVault job state lives in process memory.** The wake condition is in the
+  Diary, so no case is lost when an instance recycles, but the stub's own map of
+  job ids dies with the instance and a recycled one answers "unknown job". The
+  case then stays suspended rather than resuming wrongly, which is the safe
+  failure, but it is still a gap.
+- **The attack corpus persists to the instance filesystem**, which Cloud Run does
+  not keep between revisions. Moving it to Cloud Storage is small work.
+- **The red team and the shadow runs have no scheduler job.** Both cost model
+  calls, and neither needs to run unattended to be demonstrated.
+- **`gemini-3.5-flash` is not what runs.** See the deviation note above.
 
 ## Domain
 
