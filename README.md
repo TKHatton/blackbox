@@ -18,7 +18,8 @@ shaped it, and prove regulated data never reached where it should not.
 | 4. Invisible Ink | Done. Label lattice, propagation, exit checks, taint path. |
 | 5. The Eraser | Done. Transitive cascade, regeneration, region pinning. |
 | 6. The Time Machine | Done. Policies as data, replay, divergence. |
-| 7. The Stunt Double | Next. |
+| 7. The Stunt Double | Done. Shadow runs, Gemini judge, promotion gate. |
+| 8. The Immune System | Next. |
 
 ### A correction to the earlier Phase 1 claim
 
@@ -33,6 +34,51 @@ than to Cloud Trace.
 
 Phase 2 fixed all of that, because none of it could be built on otherwise. The
 Phase 2 suite exercises the write path end to end against a scripted model.
+
+## What Phase 7 built
+
+A candidate agent version runs against live cases, produces the actions it would
+have taken, and touches nothing.
+
+**Every write is stubbed, and not by remembering to.** Guarding this with
+discipline would mean auditing every tool each time one is added. Instead the
+candidate is handed a world it cannot write through: a scratch Diary seeded from
+the live one, a scratch copy of the case file, and a `ShadowSystems` object that
+passes reads through and refuses every outbound call. Three independent reasons a
+shadow write cannot land, so a tool added tomorrow inherits all three.
+
+**Compared on judgment, not strings.** Reducing the comparison to string equality
+would flag every reworded summary and miss the candidate reaching the opposite
+conclusion in similar words. The structural pass finds which decisions differ;
+then Gemini reads those differences, with the reasoning behind each action, and
+categorises them as equivalent, safer, riskier, or incorrect. A line the judge
+cannot be parsed into is kept as `INCORRECT` rather than dropped, because a gate
+that ignored what it could not read would pass a candidate on a malformed answer.
+
+**The gate blocks rather than warns.** Defaults are strict: one incorrect
+behaviour or one riskier behaviour stops promotion. Loosening is possible but has
+to be stated explicitly, not defaulted into. An unreachable judge also blocks.
+
+**Shadow runs are off the request path.** Their own endpoint, so a slow candidate
+cannot add latency to the live fleet. A test asserts the live path never invokes
+a shadow run.
+
+### Seeing it
+
+```bash
+BLACKBOX_IN_MEMORY=1 python demo_stunt_double.py
+```
+
+The candidate is a Correspondence Agent told to write to the customer as soon as
+a case is assessed rather than waiting for the remedy to be executed. That sounds
+like a kindness. Shadowed across three cases, the judge calls it riskier twice:
+the letter promises money that has not moved, and on the EU case it reaches the
+disclosure gateway earlier in the workflow than the live version does. The gate
+refuses promotion.
+
+Worth watching in that run: on the EU case the Invisible Ink gateway refused the
+letter before the shadow layer had to. Two independent barriers, and the earlier
+one caught it.
 
 ## What Phase 6 built
 
@@ -326,6 +372,8 @@ blackbox/
   wiki.py              Wiki page schema, with derived_from
   wiki_store.py        Wiki storage. Rewrites in place, records each rewrite
   tiering.py           Three shelves. Still a stub, see below
+  stunt.py             Shadow isolation: a world a candidate cannot write through
+  shadow_service.py    Running a candidate, judging it, gating its promotion
   policy.py            Governance rules as CEL expressions, not code
   timemachine.py       State as-of, and the fixtures a replay may see
   divergence.py        Recorded model turns, and comparing two runs
@@ -364,12 +412,14 @@ tests/
   test_phase4.py       The lattice, propagation, the gateway, the taint path
   test_phase5.py       Cascade transitivity, regeneration, region pinning
   test_phase6.py       Policies as data, state as-of, fixtures, divergence
+  test_phase7.py       Write isolation, judged comparison, the promotion gate
   conftest.py          In-memory fixtures, so the suite needs no credentials
   fakes.py             A scripted stand-in for Gemini, tests only
 demo_lifecycle.py      One complaint, start to finish, with time compressed
 demo_invisible_ink.py  The four-hop block, and why no filter could catch it
 demo_eraser.py         One retraction, six derived pages, and a refused border
 demo_time_machine.py   Tighten a threshold, replay, see which cases change
+demo_stunt_double.py   A candidate that sounded kind and tested as a risk
 ```
 
 ## Running it locally
@@ -386,7 +436,7 @@ against the in-memory backend with a scripted model.
 .venv/Scripts/python -m pytest -q
 ```
 
-171 tests, all passing.
+196 tests, all passing.
 
 To run the service locally against the in-memory store:
 
@@ -418,6 +468,7 @@ See `DEPLOY.md`. Short version: fill in `.env`, then `bash deploy.sh`.
 | `GET /policies` | The rules the fleet is running under, as data |
 | `GET /cases/{id}/as-of/{event_id}` | The world as it stood at a past moment |
 | `POST /replay` | Rewind, alter a rule, and report what would have differed |
+| `POST /shadow` | Run a candidate version in shadow and judge its promotion |
 | `GET /wiki/{page_id}` | What agents read during normal operation |
 | `GET /stubs/...` | The source systems, for inspection |
 
@@ -431,6 +482,16 @@ Four endpoints cause work, and all four are called by machines:
 | `POST /pubsub/customer-reply` | Pub/Sub | A reply cuts an appeal window short |
 
 None of them is meant for a person.
+
+## A deviation from the spec, and why
+
+The build spec requires Gemini 3.5 Flash or newer. This project's Vertex AI
+endpoint does not serve any 3.x model id: nine variants were tried in
+`us-central1`, and only `gemini-2.5-flash` and `gemini-2.5-pro` resolved. `GEMINI_MODEL` defaults to `gemini-2.5-flash`
+because that is what this project can actually reach, not because 2.5 satisfies
+the letter of the requirement. If a 3.x id becomes available, changing
+`GEMINI_MODEL` and redeploying is the whole fix; nothing else in the codebase
+names a model.
 
 ## Hard constraints, and where they are held
 

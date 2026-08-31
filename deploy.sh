@@ -26,7 +26,7 @@ set -a; source .env; set +a
 : "${COMPLAINTS_TOPIC:=blackbox-complaints}"
 : "${APPROVALS_TOPIC:=blackbox-approvals}"
 : "${REPLIES_TOPIC:=blackbox-customer-replies}"
-: "${GEMINI_MODEL:=gemini-3.5-flash}"
+: "${GEMINI_MODEL:=gemini-2.5-flash}"
 # Region pinning is checked against this on every Wiki read, so it has to match
 # the region the service actually runs in.
 : "${WORKER_REGION:=EU}"

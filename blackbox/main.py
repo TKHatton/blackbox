@@ -32,6 +32,13 @@ from .eraser import Retraction, retract, retraction_history
 from .policy import DEFAULT_POLICIES, get_policy_engine
 from .recorder import Recorder
 from .replay import ReplayMode, replay_case
+from .shadow_service import (
+    decide_promotion,
+    judge_candidate,
+    record_shadow_run,
+    run_shadow,
+)
+from .stunt import AgentVersion
 from .timemachine import state_as_of
 from .regions import RegionRoutingRefused, evaluate_routing
 from .stubs import data
@@ -79,8 +86,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="BLACKBOX",
-    description="The flight recorder for AI agents. Phase 6: The Time Machine.",
-    version="0.6.0",
+    description="The flight recorder for AI agents. Phase 7: The Stunt Double.",
+    version="0.7.0",
     lifespan=lifespan,
 )
 
@@ -91,7 +98,7 @@ def healthz() -> Dict[str, Any]:
     settings = get_settings()
     return {
         "status": "ok",
-        "phase": "6",
+        "phase": "7",
         "project_id": settings.project_id or None,
         "firestore_database": settings.firestore_database,
         "gemini_model": settings.gemini_model,
@@ -372,6 +379,65 @@ def list_retractions() -> Dict[str, Any]:
     somebody withdrew it, which is what an auditor asks for.
     """
     return {"retractions": retraction_history(get_store())}
+
+
+@app.post("/shadow")
+async def shadow_candidate(request: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    """Run a candidate agent version in shadow across cases, and judge it.
+
+    The candidate cannot change anything: it writes into scratch stores and its
+    outbound calls are refused. Deliberately its own endpoint rather than
+    something the live path invokes, so a slow candidate cannot add latency to
+    the fleet.
+
+    Body: version_id, agent_name, optionally instruction, and case_ids.
+    """
+    version_id = request.get("version_id")
+    agent_name = request.get("agent_name")
+    case_ids = request.get("case_ids") or []
+    if not version_id or not agent_name:
+        raise HTTPException(
+            status_code=400, detail="version_id and agent_name are required"
+        )
+    if not case_ids:
+        raise HTTPException(status_code=400, detail="case_ids must name at least one case")
+
+    candidate = AgentVersion(
+        version_id=version_id,
+        agent_name=agent_name,
+        description=request.get("description", ""),
+        instruction=request.get("instruction"),
+    )
+
+    store = get_store()
+    runs = []
+    for case_id in case_ids:
+        try:
+            run = await run_shadow(
+                case_id=case_id,
+                candidate=candidate,
+                live_store=store,
+                live_wiki=get_wiki(),
+                systems=get_source_systems(),
+            )
+        except Exception:
+            logger.exception("Shadow run failed for %s", case_id)
+            continue
+        record_shadow_run(run, store)
+        runs.append(run)
+
+    if not runs:
+        raise HTTPException(status_code=400, detail="No case could be shadowed")
+
+    report = await judge_candidate(runs, version_id=version_id)
+    decision = decide_promotion(report)
+
+    return {
+        "version_id": version_id,
+        "cases_shadowed": [r.case_id for r in runs],
+        "blocked_writes": sum(len(r.blocked_writes) for r in runs),
+        "promotion": decision.to_dict(),
+    }
 
 
 @app.get("/policies")

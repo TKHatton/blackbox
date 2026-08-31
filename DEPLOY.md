@@ -200,9 +200,13 @@ complaint that caused them.
 
 ## If something fails
 
-**The model id is rejected.** `GEMINI_MODEL` defaults to `gemini-3.5-flash`. If
-Vertex AI in your region does not serve that id, set the one it does serve and
-redeploy. Nothing else in the codebase names a model.
+**The model id is rejected.** `GEMINI_MODEL` defaults to `gemini-2.5-flash`,
+confirmed working against this project's Vertex AI endpoint in `us-central1`.
+`gemini-3.5-flash` and every 3.x variant tried returned 404 NOT_FOUND on this
+project, so the default was set to what actually resolves rather than what the
+build spec names. If a newer id becomes available in your project or region,
+set `GEMINI_MODEL` to it and redeploy. Nothing else in the codebase names a
+model.
 
 **Permission denied on Firestore.** The runtime service account needs
 `roles/datastore.user`, which `deploy.sh` binds. IAM changes can take a minute to
@@ -273,11 +277,26 @@ and every downstream decision that changed. A replay reads recorded tool
 responses only: it cannot reach CoreBank, and a missing recording stops it rather
 than falling through to a live call.
 
+## Testing a candidate agent version
+
+Run a candidate in shadow across cases already in the log. It reads live data, produces the
+actions it would have taken, and cannot change anything:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"version_id":"correspondence-v2","agent_name":"correspondence_agent",
+       "instruction":"Write to the customer as soon as the case is assessed.",
+       "case_ids":["CASE-CMP-2026-0841","CASE-CMP-2026-0842"]}'   https://YOUR-SERVICE-URL/shadow
+```
+
+The response carries Gemini's categorised comparison and the promotion decision.
+A candidate that behaved incorrectly or more riskily than the live version is
+refused, and the reasons say which cases and why.
+
 ## What is deliberately not here
 
 The tiering job from Phase 1.5 is still a stub. It does not copy to BigQuery and
 it does not delete from Firestore, so Firestore will grow. That is fine at these
 volumes and needs fixing before the Filing Cabinet claim is true.
 
-The Stunt Double is Phase 7. Nothing yet runs a candidate agent version in
-shadow against live traffic.
+The Immune System is Phase 8. Nothing yet generates adversarial attacks against
+the fleet or accumulates successful ones into a regression corpus.

@@ -27,7 +27,7 @@ class Settings(BaseModel):
     # Vertex AI is the default and what production uses. The Gemini API path exists
     # because Vertex AI inference requires billing on the project, and the Gemini
     # API free tier does not, so development is not blocked while billing is sorted.
-    gemini_model: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-3.5-flash"))
+    gemini_model: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
     use_vertex: bool = Field(
         default_factory=lambda: os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "TRUE").upper() == "TRUE"
     )
