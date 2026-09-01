@@ -54,3 +54,11 @@ Thumbs.db
 
 # Local virtual environment
 .venv/
+
+# Hackathon prep and submission materials, not project deliverables
+VIDEO.md
+SCREEN_RECORDING_GUIDE.md
+RECORDING_CUE_SHEET.md
+ELEVENLABS_SCRIPT.md
+DEVPOST_SUBMISSION.md
+demo-assets/
